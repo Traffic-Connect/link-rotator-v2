@@ -2,323 +2,179 @@
 
 Высокопроизводительный ротатор ссылок на Node.js с MongoDB и Redis.
 
-## Преимущества перед PHP/Laravel версией
+## 📥 Установка на Production (Hestia CP)
 
-✅ **В 3-5 раз быстрее** - асинхронная обработка запросов  
-✅ **Меньше потребление памяти** - 50-100MB vs 200-500MB  
-✅ **Горизонтальное масштабирование** - легко добавлять инстансы  
-✅ **Простая кластеризация** - встроенная поддержка кластеров  
-✅ **MongoDB** - быстрые запросы, автоиндексация, TTL для старых записей
+### 1. Подготовка сервера
 
-## Технологии
+Требования:
+- Ubuntu 20.04 / 22.04
+- Hestia Control Panel
+- Root доступ
+- Домен привязан к серверу
 
-- **Node.js 20** - серверная часть
-- **Express.js** - веб-фреймворк
-- **MongoDB 7** - основная БД
-- **Redis 7** - кеширование ротации
-- **Nginx** - reverse proxy + rate limiting
-- **Docker** - контейнеризация
+### 2. Создайте домен в Hestia CP
 
-## Быстрый старт
+1. Зайдите в Hestia CP → WEB → Add Web Domain
+2. Введите домен: `rotator.example.com`
+3. Выберите пользователя: `admin`
 
-### 1. Клонирование и установка
+### 3. Загрузите проект на сервер
 
 ```bash
-cd link-rotator-nodejs
-npm install
+# Подключитесь к серверу
+ssh root@your-server
+
+# Перейдите в папку домена
+cd /home/admin/web/rotator.example.com/public_html/
+
+# Клонируйте репозиторий
+git clone https://github.com/Traffic-Connect/link-rotator-v2.git .
+
+# Если папка не пустая, используйте:
+rm -rf * .* 2>/dev/null || true
+git clone https://github.com/Traffic-Connect/link-rotator-v2.git .
 ```
 
-### 2. Настройка окружения
-
-Скопируйте `.env` и измените настройки:
+### 4. Запустите установку
 
 ```bash
-cp .env .env.local
-nano .env.local
+# Сделайте скрипт исполняемым
+chmod +x deploy/install.sh
+
+# Запустите установку
+sudo bash deploy/install.sh
 ```
 
-Важные параметры:
-```env
-JWT_SECRET=your-random-secret-key-here
-MONGODB_URI=mongodb://mongo:27017/link_rotator
-REDIS_URL=redis://redis:6379
+Скрипт спросит:
+- **Domain**: `rotator.example.com`
+- **Hestia user**: `admin`
+
+Установка автоматически:
+- ✅ Установит Node.js 20, MongoDB 4.4, Redis 7, PM2
+- ✅ Установит все зависимости
+- ✅ Соберет фронтенд
+- ✅ Создаст .env с уникальным JWT_SECRET
+- ✅ Настроит MongoDB и Redis
+- ✅ Настроит Nginx
+- ✅ Создаст администратора
+
+### 5. Настройте SSL
+
+1. В Hestia CP откройте настройки домена
+2. Включите SSL (Let's Encrypt)
+3. Дождитесь выпуска сертификата
+
+### 6. Готово! 🎉
+
+```
+URL: https://rotator.example.com
+Email: adminseo@trafficconnect.com
+Password: m9OviUHdCOKM
 ```
 
-### 3. Запуск с Docker
+---
+
+## 🔄 Обновление
 
 ```bash
-# Сборка и запуск всех сервисов
+cd /home/admin/web/rotator.example.com/public_html/
+
+# Метод 1: Через Git (рекомендуется)
+git pull origin main
+bash deploy/update.sh
+
+# Метод 2: Полная переустановка
+rm -rf * .*
+git clone https://github.com/Traffic-Connect/link-rotator-v2.git .
+bash deploy/update.sh
+```
+
+---
+
+## 🐳 Docker для разработки
+
+```bash
+# 1. Клонируйте репозиторий
+git clone https://github.com/Traffic-Connect/link-rotator-v2.git
+cd link-rotator-v2
+
+# 2. Запустите
+cp .env.example .env
 docker-compose up -d
-
-# Просмотр логов
-docker-compose logs -f app
-
-# Остановка
-docker-compose down
 ```
 
-Приложение будет доступно на:
-- **API**: http://localhost:3000
-- **Nginx (proxy)**: http://localhost
-- **MongoDB**: localhost:27017
-- **Redis**: localhost:6379
+Доступ: http://localhost
 
-### 4. Запуск без Docker (для разработки)
+## 📚 Документация
 
-```bash
-# Убедитесь что MongoDB и Redis запущены локально
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Полная инструкция по развертыванию
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Быстрая справка по командам
+- **[deploy/](deploy/)** - Скрипты для установки и обновления
 
-# Установка зависимостей
-npm install
+## 🔑 Доступ по умолчанию
 
-# Запуск в режиме разработки
-npm run dev
-
-# Или production режим
-npm start
+```
+Email: adminseo@trafficconnect.com
+Password: m9OviUHdCOKM
 ```
 
-## API Endpoints
+## 📋 Основные возможности
 
-### Аутентификация
+- ✅ Ротация ссылок с кешированием в Redis
+- ✅ Статистика кликов по дням
+- ✅ Управление пользователями (роли admin/user)
+- ✅ Экспорт статистики в CSV
+- ✅ Responsive UI на Vue.js + Bootstrap
+- ✅ JWT авторизация
+- ✅ PM2 для production
+- ✅ Docker для разработки
 
-```bash
-# Регистрация
-POST /api/auth/register
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "password123"
-}
-
-# Вход
-POST /api/auth/login
-{
-  "email": "john@example.com",
-  "password": "password123"
-}
-
-# Выход
-POST /api/auth/logout
-
-# Получить текущего пользователя
-GET /api/auth/me
-```
-
-### Ссылки
+## 🚀 API Endpoints
 
 ```bash
-# Получить все ссылки
-GET /api/links?date=2024-01-15
-
-# Создать ссылку
-POST /api/links
-{
-  "key": "my-link",
-  "name": "My Campaign",
-  "redirects": [
-    "https://example1.com",
-    "https://example2.com",
-    "https://example3.com"
-  ]
-}
-
-# Обновить ссылку
-PUT /api/links/:id
-{
-  "name": "Updated name",
-  "redirects": ["https://new-url.com"]
-}
-
-# Удалить ссылку
-DELETE /api/links/:id
-
-# Удалить все ссылки
-DELETE /api/links
-
-# Экспорт в CSV
-GET /api/links/export/csv?date=2024-01-15
-```
-
-### Редирект (публичный, без авторизации)
-
-```bash
-# Просто перейдите по ссылке
+# Публичный редирект (без авторизации)
 GET /api/links/r/:key
 
-# Пример: http://your-domain.com/api/links/r/my-link
+# Все остальные endpoints требуют авторизации:
+POST /api/auth/login
+GET  /api/links
+POST /api/links
+PUT  /api/links/:id
+DELETE /api/links/:id
+GET  /api/stats/dashboard
 ```
 
-### Статистика
+## 🛠 Технологии
+
+- **Backend**: Node.js 20, Express.js
+- **Database**: MongoDB 4.4
+- **Cache**: Redis 7
+- **Frontend**: Vue.js 3, Bootstrap 5
+- **Process Manager**: PM2
+- **Proxy**: Nginx
+
+## 📊 Производительность
+
+- 🚀 ~5000 req/s с Redis кешем
+- ⚡ Latency 5-15ms (95 percentile)
+- 💾 Memory ~50-150MB
+
+## 🔧 Управление
 
 ```bash
-# Dashboard
-GET /api/stats/dashboard?date=2024-01-15
+# PM2 команды
+pm2 list
+pm2 logs link-rotator
+pm2 restart link-rotator
 
-# Статистика по конкретной ссылке
-GET /api/stats/link/:linkId?startDate=2024-01-01&endDate=2024-01-31
-
-# Топ ссылок
-GET /api/stats/top-links?limit=10&period=7d
+# Обновление проекта
+bash deploy/update.sh
 ```
 
-## Производительность
+## 📞 Поддержка
 
-### Бенчмарки (на моей машине)
+Проблемы? Смотрите [DEPLOYMENT.md](DEPLOYMENT.md) раздел Troubleshooting
 
-**Редиректы** (самое важное):
-- 🚀 ~5000 req/s (с Redis кешем)
-- 🟢 ~1000 req/s (без кеша, MongoDB)
-- ⚡ Latency: 5-15ms (95 percentile)
+---
 
-**API операции**:
-- GET /api/links: ~2000 req/s
-- POST /api/links: ~1500 req/s
-
-**Memory**:
-- Idle: ~50MB
-- Under load: ~100-150MB
-
-### Советы по оптимизации
-
-1. **Nginx rate limiting** - уже настроен в nginx.conf
-2. **Redis persistence** - используйте AOF для production
-3. **MongoDB replica set** - для высокой доступности
-4. **Кластеризация Node.js** - запустите несколько worker процессов:
-
-```javascript
-// Добавьте в server.js
-const cluster = require('cluster');
-const os = require('os');
-
-if (cluster.isMaster) {
-  const numWorkers = os.cpus().length;
-  for (let i = 0; i < numWorkers; i++) {
-    cluster.fork();
-  }
-} else {
-  // Ваш код сервера
-}
-```
-
-5. **PM2** для production:
-
-```bash
-npm install -g pm2
-
-# Запуск с кластером
-pm2 start src/server.js -i max --name link-rotator
-
-# Мониторинг
-pm2 monit
-
-# Логи
-pm2 logs
-```
-
-## Мониторинг
-
-### Health Check
-
-```bash
-curl http://localhost:3000/health
-```
-
-### Docker Logs
-
-```bash
-# Все сервисы
-docker-compose logs -f
-
-# Только app
-docker-compose logs -f app
-
-# Только MongoDB
-docker-compose logs -f mongo
-```
-
-### Метрики Redis
-
-```bash
-docker exec -it link_rotator_redis redis-cli INFO stats
-```
-
-## Миграция с Laravel
-
-Если у вас уже есть данные в MySQL:
-
-1. **Экспорт из MySQL**:
-```bash
-php artisan links:export
-```
-
-2. **Импорт в MongoDB** (создайте скрипт):
-```javascript
-// scripts/import.js
-const fs = require('fs');
-const mongoose = require('mongoose');
-const Link = require('./src/models/Link');
-
-// Читаем CSV/JSON
-// Создаем документы в MongoDB
-```
-
-3. **Обновите URL редиректов**:
-```
-href/{key} → /api/links/r/{key}
-```
-
-## Безопасность
-
-- ✅ JWT токены в httpOnly cookies
-- ✅ Helmet.js для заголовков безопасности
-- ✅ Rate limiting в Nginx
-- ✅ Валидация всех входных данных
-- ✅ Bcrypt для паролей (10 rounds)
-
-## Troubleshooting
-
-### Проблема: "Cannot connect to MongoDB"
-
-```bash
-# Проверьте что MongoDB запущен
-docker-compose ps
-
-# Перезапустите контейнер
-docker-compose restart mongo
-```
-
-### Проблема: "Redis connection failed"
-
-```bash
-# Проверьте Redis
-docker exec -it link_rotator_redis redis-cli PING
-
-# Должен вернуть PONG
-```
-
-### Проблема: "Port 3000 already in use"
-
-```bash
-# Найдите процесс
-lsof -i :3000
-
-# Или измените порт в .env
-PORT=3001
-```
-
-## Production Checklist
-
-- [ ] Смените JWT_SECRET на случайный
-- [ ] Настройте CORS_ORIGIN на свой домен
-- [ ] Включите SSL (HTTPS)
-- [ ] Настройте MongoDB replica set
-- [ ] Включите Redis persistence (AOF)
-- [ ] Настройте логирование (Winston/Pino)
-- [ ] Добавьте мониторинг (Prometheus/Grafana)
-- [ ] Настройте backup MongoDB
-- [ ] Используйте PM2 или Kubernetes
-
-## Лицензия
-
-MIT
+**Лицензия:** MIT

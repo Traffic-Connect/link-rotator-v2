@@ -23,7 +23,6 @@ DOMAIN=""
 USER=""
 PROJECT_PATH=""
 ADMIN_EMAIL="adminseo@trafficconnect.com"
-ADMIN_PASSWORD=$(openssl rand -base64 12)
 JWT_SECRET=$(openssl rand -base64 32)
 
 # Получаем параметры
@@ -36,7 +35,7 @@ if [ -z "$DOMAIN" ] || [ -z "$USER" ]; then
     exit 1
 fi
 
-PROJECT_PATH="/home/$USER/web/$DOMAIN/link-rotator"
+PROJECT_PATH="/home/$USER/web/$DOMAIN/public_html"
 
 echo ""
 echo "Configuration:"
@@ -120,21 +119,17 @@ fi
 
 echo ""
 echo "======================================"
-echo "2. Creating Project Structure"
+echo "2. Setting Up Project"
 echo "======================================"
 
-# Create project directory
-mkdir -p $PROJECT_PATH
-cd $PROJECT_PATH
-
-# Clone or copy project files
-if [ -d "/tmp/link-rotator-nodejs" ]; then
-    echo "Copying project files from /tmp..."
-    cp -r /tmp/link-rotator-nodejs/* .
-else
-    echo "❌ Please copy project files to /tmp/link-rotator-nodejs first"
+# Убедимся, что директория существует
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "❌ Project directory not found at $PROJECT_PATH"
+    echo "Please upload your project files to $PROJECT_PATH first"
     exit 1
 fi
+
+cd $PROJECT_PATH
 
 # Set ownership
 chown -R $USER:$USER $PROJECT_PATH
@@ -177,17 +172,20 @@ echo "======================================"
 echo "5. Initializing Database"
 echo "======================================"
 
-# Create MongoDB database and admin user
-mongo link_rotator --eval "
-db.users.insertOne({
-    name: 'Admin',
-    email: '$ADMIN_EMAIL',
-    password: '\$2b\$10\$rQYPbqVZ8Kx3xZQXZQXZQO7cYqZqZqZqZqZqZqZqZqZqZqZqZqZ',
-    role: 'admin',
-    isActive: true,
-    createdAt: new Date(),
-    updatedAt: new Date()
-});
+# Создаем индексы MongoDB
+mongosh link_rotator --eval "
+db.links.createIndex({ 'key': 1 }, { unique: true });
+db.links.createIndex({ 'userId': 1, 'createdAt': -1 });
+db.links.createIndex({ 'userId': 1, 'isActive': 1 });
+
+db.clicks.createIndex({ 'linkId': 1, 'createdAt': -1 });
+db.clicks.createIndex({ 'redirectId': 1, 'createdAt': -1 });
+db.clicks.createIndex({ 'createdAt': -1 });
+
+db.users.createIndex({ 'email': 1 }, { unique: true });
+db.users.createIndex({ 'isActive': 1 });
+
+print('✅ MongoDB indexes created');
 "
 
 echo "✅ Database initialized"
@@ -197,30 +195,19 @@ echo "======================================"
 echo "6. Creating PM2 Process"
 echo "======================================"
 
-# Create PM2 ecosystem file
-cat > ecosystem.config.js << 'EOF'
-module.exports = {
-  apps: [{
-    name: 'link-rotator',
-    script: './src/server.js',
-    instances: 2,
-    exec_mode: 'cluster',
-    env: {
-      NODE_ENV: 'production'
-    },
-    error_file: './logs/error.log',
-    out_file: './logs/out.log',
-    log_file: './logs/combined.log',
-    time: true
-  }]
-};
-EOF
+# Копируем ecosystem config если его нет
+if [ ! -f "ecosystem.config.js" ]; then
+    cp deploy/ecosystem.config.js ecosystem.config.js
+fi
 
 chown $USER:$USER ecosystem.config.js
 
 # Create logs directory
 mkdir -p logs
 chown -R $USER:$USER logs
+
+# Stop any existing process
+sudo -u $USER pm2 delete link-rotator 2>/dev/null || true
 
 # Start application with PM2
 sudo -u $USER pm2 start ecosystem.config.js
@@ -233,40 +220,58 @@ echo "======================================"
 echo "7. Configuring Nginx"
 echo "======================================"
 
-# Create Nginx configuration
+# Create Nginx configuration for this specific domain
 NGINX_CONF="/home/$USER/conf/web/$DOMAIN/nginx.conf_link_rotator"
 
-cat > $NGINX_CONF << 'NGINXCONF'
+cat > $NGINX_CONF << EOF
+# Frontend - Vue.js static files
 location / {
-    root /home/USER/web/DOMAIN/link-rotator/frontend/dist;
-    try_files $uri $uri/ /index.html;
+    root $PROJECT_PATH/frontend/dist;
+    try_files \$uri \$uri/ /index.html;
+    expires 1d;
+    add_header Cache-Control "public, immutable";
 }
 
+# API - Proxy to Node.js
 location /api/ {
     proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection 'upgrade';
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_cache_bypass $http_upgrade;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_cache_bypass \$http_upgrade;
+
+    # Timeouts
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
 }
 
+# Health check
 location /health {
     proxy_pass http://127.0.0.1:3000;
     access_log off;
 }
-NGINXCONF
 
-# Replace placeholders
-sed -i "s|/home/USER/web/DOMAIN|/home/$USER/web/$DOMAIN|g" $NGINX_CONF
+# Static assets caching
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    root $PROJECT_PATH/frontend/dist;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    access_log off;
+}
+EOF
 
 # Include in main Nginx config
 MAIN_NGINX="/home/$USER/conf/web/$DOMAIN/nginx.conf"
-if ! grep -q "nginx.conf_link_rotator" $MAIN_NGINX; then
-    sed -i "/location \/ {/i \    include $NGINX_CONF;" $MAIN_NGINX
+if [ -f "$MAIN_NGINX" ]; then
+    if ! grep -q "nginx.conf_link_rotator" $MAIN_NGINX; then
+        # Добавляем include перед первым location
+        sed -i "/location \/ {/i \    include $NGINX_CONF;" $MAIN_NGINX
+    fi
 fi
 
 # Reload Nginx
@@ -291,16 +296,17 @@ echo ""
 echo "📋 Configuration:"
 echo "  Domain: https://$DOMAIN"
 echo "  Admin Email: $ADMIN_EMAIL"
-echo "  Admin Password: $ADMIN_PASSWORD"
+echo "  Admin Password: m9OviUHdCOKM"
 echo ""
 echo "⚠️  IMPORTANT: Save these credentials!"
 echo ""
 echo "📝 Next steps:"
-echo "  1. Point domain $DOMAIN to this server IP"
-echo "  2. Setup SSL in Hestia CP"
+echo "  1. Make sure domain $DOMAIN points to this server IP"
+echo "  2. Setup SSL in Hestia CP (Let's Encrypt)"
 echo "  3. Login to https://$DOMAIN"
 echo ""
 echo "🔧 Useful commands:"
+echo "  sudo su - $USER"
 echo "  pm2 list                    - View running processes"
 echo "  pm2 logs link-rotator      - View application logs"
 echo "  pm2 restart link-rotator   - Restart application"

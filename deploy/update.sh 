@@ -24,7 +24,7 @@ if [ -z "$DOMAIN" ] || [ -z "$USER" ]; then
     exit 1
 fi
 
-PROJECT_PATH="/home/$USER/web/$DOMAIN/link-rotator"
+PROJECT_PATH="/home/$USER/web/$DOMAIN/public_html"
 
 if [ ! -d "$PROJECT_PATH" ]; then
     echo "❌ Project not found at $PROJECT_PATH"
@@ -33,24 +33,54 @@ fi
 
 cd $PROJECT_PATH
 
-echo "1. Pulling latest code..."
+echo "1. Creating backup..."
+BACKUP_DIR="/home/$USER/backups/link-rotator-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+cp -r frontend/dist "$BACKUP_DIR/" 2>/dev/null || echo "No previous build to backup"
+cp .env "$BACKUP_DIR/" 2>/dev/null || echo "No .env to backup"
+echo "✅ Backup created at $BACKUP_DIR"
+
+echo ""
+echo "2. Pulling latest code..."
 # Если используется Git:
 # git pull origin main
+echo "⚠️  Make sure you uploaded the latest code to $PROJECT_PATH"
+read -p "Press Enter to continue..."
 
-echo "2. Installing backend dependencies..."
+echo ""
+echo "3. Installing backend dependencies..."
 sudo -u $USER npm install --production
 
-echo "3. Building frontend..."
+echo ""
+echo "4. Building frontend..."
 cd frontend
 sudo -u $USER npm install --legacy-peer-deps
 sudo -u $USER npm run build
 cd ..
 
-echo "4. Restarting application..."
+echo ""
+echo "5. Restarting application..."
 sudo -u $USER pm2 restart link-rotator
+
+# Wait for app to start
+echo "Waiting for application to start..."
+sleep 3
+
+# Check if app is running
+if sudo -u $USER pm2 list | grep -q "link-rotator.*online"; then
+    echo "✅ Application restarted successfully"
+else
+    echo "⚠️  Warning: Application might not be running properly"
+    echo "Check logs: pm2 logs link-rotator"
+fi
 
 echo ""
 echo "✅ Update complete!"
 echo ""
-echo "Check status: pm2 list"
-echo "View logs: pm2 logs link-rotator"
+echo "📋 Useful commands:"
+echo "  pm2 list                    - View running processes"
+echo "  pm2 logs link-rotator      - View application logs"
+echo "  pm2 restart link-rotator   - Restart application"
+echo ""
+echo "📁 Backup location: $BACKUP_DIR"
+echo ""

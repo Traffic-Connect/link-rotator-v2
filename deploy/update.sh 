@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# ============================================
+# Link Rotator - Update Script
+# ============================================
+
+set -e
+
+echo "======================================"
+echo "Link Rotator - Update"
+echo "======================================"
+echo ""
+
+# Переменные
+DOMAIN=""
+USER=""
+
+# Получаем параметры
+read -p "Domain: " DOMAIN
+read -p "Hestia user: " USER
+
+if [ -z "$DOMAIN" ] || [ -z "$USER" ]; then
+    echo "❌ Domain and User are required!"
+    exit 1
+fi
+
+PROJECT_PATH="/home/$USER/web/$DOMAIN/link-rotator"
+
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "❌ Project not found at $PROJECT_PATH"
+    exit 1
+fi
+
+cd $PROJECT_PATH
+
+echo "1. Pulling latest code..."
+# Если используется Git:
+# git pull origin main
+
+echo "2. Installing backend dependencies..."
+sudo -u $USER npm install --production
+
+echo "3. Building frontend..."
+cd frontend
+sudo -u $USER npm install --legacy-peer-deps
+sudo -u $USER npm run build
+cd ..
+
+echo "4. Restarting application..."
+sudo -u $USER pm2 restart link-rotator
+
+echo ""
+echo "✅ Update complete!"
+echo ""
+echo "Check status: pm2 list"
+echo "View logs: pm2 logs link-rotator"

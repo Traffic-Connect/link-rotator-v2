@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: node:20-alpine
+    container_name: link_rotator_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install --legacy-peer-deps && npm run build"
+    networks:
+      - app-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: link_rotator_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/link_rotator
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your-secret-key-change-this
+      PORT: 3000
+    depends_on:
+      - mongo
+      - redis
+    volumes:
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+    networks:
+      - app-network
+    command: sh -c "sleep 15 && npm start"
+
+  mongo:
+    image: mongo:4.4
+    container_name: link_rotator_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: link_rotator
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: link_rotator_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: link_rotator_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      frontend:
+        condition: service_completed_successfully
+      app:
+        condition: service_started
+    networks:
+      - app-network
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge

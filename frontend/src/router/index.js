@@ -21,6 +21,12 @@ const router = createRouter({
             meta: { requiresAuth: true }
         },
         {
+            path: '/analytics',
+            name: 'Analytics',
+            component: () => import('../views/AnalyticsView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true }
+        },
+        {
             path: '/users',
             name: 'Users',
             component: () => import('../views/UsersView.vue'),
@@ -29,9 +35,14 @@ const router = createRouter({
     ]
 })
 
-// Защита роутов
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
     const authStore = useAuthStore()
+
+    if (to.meta.requiresAuth || to.meta.requiresAdmin) {
+        if (!authStore.user && authStore.token) {
+            await authStore.checkAuth()
+        }
+    }
 
     if (to.meta.requiresAuth && !authStore.isAuthenticated) {
         next('/login')

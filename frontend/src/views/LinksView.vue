@@ -1,19 +1,20 @@
 <template>
   <div>
     <div class="container-fluid mt-4">
-      <!-- Header -->
       <div class="row mb-4">
         <div class="col">
           <h2><i class="bi bi-link-45deg"></i> Links Dashboard</h2>
         </div>
         <div class="col-auto">
+          <button class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#exportCsvModal">
+            <i class="bi bi-download"></i> Export CSV
+          </button>
           <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createLinkModal">
             <i class="bi bi-plus-lg"></i> Create Link
           </button>
         </div>
       </div>
 
-      <!-- Date Filter -->
       <div class="card mb-4">
         <div class="card-body">
           <div class="row align-items-center">
@@ -40,7 +41,6 @@
         </div>
       </div>
 
-      <!-- Stats Cards -->
       <div class="row mb-4">
         <div class="col-md-3">
           <div class="card bg-primary text-white">
@@ -76,7 +76,6 @@
         </div>
       </div>
 
-      <!-- Links Table -->
       <div class="card">
         <div class="card-header">
           <h5 class="mb-0">All Links</h5>
@@ -137,7 +136,6 @@
       </div>
     </div>
 
-    <!-- Toast Notification -->
     <div class="toast-container position-fixed top-0 end-0 p-3">
       <div class="toast" ref="toast" role="alert">
         <div class="toast-header">
@@ -150,7 +148,40 @@
       </div>
     </div>
 
-    <!-- Create Link Modal -->
+    <div class="modal fade" id="exportCsvModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Export to CSV</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Start Date</label>
+              <input type="date" class="form-control" v-model="exportData.startDate" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">End Date</label>
+              <input type="date" class="form-control" v-model="exportData.endDate" required>
+            </div>
+            <div class="alert alert-info mb-0">
+              <small>
+                <i class="bi bi-info-circle"></i> Export will include all links with clicks data for the selected period.
+              </small>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-success" @click="exportCsv" :disabled="exporting">
+              <span v-if="exporting" class="spinner-border spinner-border-sm me-2"></span>
+              <i v-else class="bi bi-download"></i>
+              {{ exporting ? 'Exporting...' : 'Export' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal fade" id="createLinkModal" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
@@ -191,7 +222,6 @@
       </div>
     </div>
 
-    <!-- Edit Link Modal -->
     <div class="modal fade" id="editLinkModal" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
@@ -240,6 +270,7 @@ import { Modal, Toast } from 'bootstrap'
 const links = ref([])
 const loading = ref(true)
 const dateFilter = ref(getTodayDate())
+const exporting = ref(false)
 
 const stats = ref({
   totalLinks: 0,
@@ -261,12 +292,23 @@ const editingLink = ref({
   redirectsText: ''
 })
 
+const exportData = ref({
+  startDate: getFirstDayOfMonth(),
+  endDate: getTodayDate()
+})
+
 const toastMessage = ref('')
 const toast = ref(null)
 
 function getTodayDate() {
   const today = new Date()
   return today.toISOString().split('T')[0]
+}
+
+function getFirstDayOfMonth() {
+  const date = new Date()
+  date.setDate(1)
+  return date.toISOString().split('T')[0]
 }
 
 function setToday() {
@@ -285,14 +327,70 @@ const fetchLinks = async () => {
 
     stats.value = {
       totalLinks: links.value.length,
-      totalClicks: response.data.totalClicks || 0,
-      dailyClicks: links.value.reduce((sum, link) => sum + (link.dailyClicks || 0), 0),
+      totalClicks: links.value.reduce((sum, link) => sum + (link.totalClicks || 0), 0),
+      dailyClicks: response.data.totalClicks || 0,
       activeLinks: links.value.filter(l => (l.totalClicks || 0) > 0).length
     }
   } catch (error) {
     console.error('Failed to fetch links:', error)
   } finally {
     loading.value = false
+  }
+}
+
+const exportCsv = async () => {
+  if (!exportData.value.startDate || !exportData.value.endDate) {
+    alert('Please select both start and end dates')
+    return
+  }
+
+  if (new Date(exportData.value.startDate) > new Date(exportData.value.endDate)) {
+    alert('Start date must be before end date')
+    return
+  }
+
+  exporting.value = true
+
+  try {
+    const response = await apiClient.get('/links/export/csv', {
+      params: {
+        startDate: exportData.value.startDate,
+        endDate: exportData.value.endDate
+      },
+      responseType: 'blob'
+    })
+
+    const blob = new Blob([response.data], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `links_export_${exportData.value.startDate}_${exportData.value.endDate}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    const modalEl = document.getElementById('exportCsvModal')
+    const modal = Modal.getInstance(modalEl)
+    if (modal) {
+      modal.hide()
+    }
+
+    const backdrop = document.querySelector('.modal-backdrop')
+    if (backdrop) {
+      backdrop.remove()
+    }
+
+    document.body.classList.remove('modal-open')
+    document.body.style.removeProperty('overflow')
+    document.body.style.removeProperty('padding-right')
+
+    showToast('CSV exported successfully!')
+  } catch (error) {
+    console.error('Export failed:', error)
+    alert('Failed to export CSV')
+  } finally {
+    exporting.value = false
   }
 }
 

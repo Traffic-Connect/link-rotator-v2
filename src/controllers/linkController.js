@@ -113,11 +113,28 @@ class LinkController {
 
             const links = await Link.find({ userId }).sort({ createdAt: -1 }).lean();
 
-            // Получаем статистику кликов за день
-            let dailyStats = [];
-            if (date) {
-                dailyStats = await Click.getDailyStats(date);
-            }
+            // Получаем ID всех ссылок пользователя
+            const linkIds = links.map(link => link._id);
+
+            // Определяем дату для статистики
+            const selectedDate = date || new Date().toISOString().split('T')[0];
+
+            // Получаем статистику по редиректам за выбранную дату
+            const dailyStats = await Click.getDailyStats(selectedDate);
+
+            // Считаем общее количество кликов за выбранную дату только для ссылок этого пользователя
+            const startOfDay = new Date(selectedDate);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(selectedDate);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            const totalClicksForDate = await Click.countDocuments({
+                linkId: { $in: linkIds },
+                createdAt: {
+                    $gte: startOfDay,
+                    $lte: endOfDay
+                }
+            });
 
             // Формируем карту кликов по redirectId
             const clicksMap = {};
@@ -141,12 +158,10 @@ class LinkController {
                 };
             });
 
-            const totalClicks = await Click.getTotalClicksToday();
-
             res.json({
                 links: enrichedLinks,
-                totalClicks,
-                date: date || new Date().toISOString().split('T')[0]
+                totalClicks: totalClicksForDate,
+                date: selectedDate
             });
 
         } catch (error) {
@@ -331,14 +346,34 @@ class LinkController {
     // Экспорт в CSV
     async exportCSV(req, res, next) {
         try {
-            const { date } = req.query;
+            const { startDate, endDate } = req.query;
             const userId = req.user.id;
 
             const links = await Link.find({ userId }).lean();
 
             let dailyStats = [];
-            if (date) {
-                dailyStats = await Click.getDailyStats(date);
+            if (startDate && endDate) {
+                const start = new Date(startDate);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+
+                dailyStats = await Click.aggregate([
+                    {
+                        $match: {
+                            createdAt: {
+                                $gte: start,
+                                $lte: end
+                            }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: '$redirectId',
+                            count: { $sum: 1 }
+                        }
+                    }
+                ]);
             }
 
             const clicksMap = {};
@@ -346,76 +381,18 @@ class LinkController {
                 clicksMap[stat._id.toString()] = stat.count;
             });
 
-            // Формируем CSV
-            let csv = 'Link Key,Link Name,Redirect URL,Total Clicks,Daily Clicks\n';
+            let csv = 'Link Key,Link Name,Redirect URL,Total Clicks,Period Clicks\n';
 
             links.forEach(link => {
                 link.redirects.forEach(redirect => {
-                    const dailyClicks = clicksMap[redirect._id.toString()] || 0;
-                    csv += `"${link.key}","${link.name || ''}","${redirect.url}",${redirect.clickCount},${dailyClicks}\n`;
+                    const periodClicks = clicksMap[redirect._id.toString()] || 0;
+                    csv += `"${link.key}","${link.name || ''}","${redirect.url}",${redirect.clickCount},${periodClicks}\n`;
                 });
             });
 
             res.setHeader('Content-Type', 'text/csv');
             res.setHeader('Content-Disposition', `attachment; filename=links_export_${Date.now()}.csv`);
             res.send(csv);
-
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    // Получить все ссылки пользователя
-    async getAll(req, res, next) {
-        try {
-            const { date } = req.query;
-            const userId = req.user.id;
-
-            const links = await Link.find({ userId }).sort({ createdAt: -1 }).lean();
-
-            // Получаем статистику кликов за выбранную дату
-            let dailyStats = [];
-            let totalClicksForDate = 0;
-
-            if (date) {
-                dailyStats = await Click.getDailyStats(date);
-
-                // Считаем общее количество кликов за выбранную дату
-                totalClicksForDate = dailyStats.reduce((sum, stat) => sum + stat.count, 0);
-            } else {
-                // Если дата не указана - берем сегодняшнюю
-                const today = new Date().toISOString().split('T')[0];
-                dailyStats = await Click.getDailyStats(today);
-                totalClicksForDate = await Click.getTotalClicksToday();
-            }
-
-            // Формируем карту кликов по redirectId
-            const clicksMap = {};
-            dailyStats.forEach(stat => {
-                clicksMap[stat._id.toString()] = stat.count;
-            });
-
-            // Обогащаем данные ссылок статистикой
-            const enrichedLinks = links.map(link => {
-                const redirects = link.redirects.map(redirect => ({
-                    ...redirect,
-                    dailyClicks: clicksMap[redirect._id.toString()] || 0
-                }));
-
-                const totalDailyClicks = redirects.reduce((sum, r) => sum + r.dailyClicks, 0);
-
-                return {
-                    ...link,
-                    redirects,
-                    dailyClicks: totalDailyClicks
-                };
-            });
-
-            res.json({
-                links: enrichedLinks,
-                totalClicks: totalClicksForDate,
-                date: date || new Date().toISOString().split('T')[0]
-            });
 
         } catch (error) {
             next(error);

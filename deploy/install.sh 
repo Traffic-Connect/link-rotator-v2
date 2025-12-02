@@ -220,64 +220,103 @@ echo "======================================"
 echo "7. Configuring Nginx"
 echo "======================================"
 
-# Create Nginx configuration for this specific domain
-NGINX_CONF="/home/$USER/conf/web/$DOMAIN/nginx.conf_link_rotator"
+# Get server IP
+SERVER_IP=$(hostname -I | awk '{print $1}')
+
+# Create full Nginx configuration
+NGINX_CONF="/home/$USER/conf/web/$DOMAIN/nginx.conf"
+
+# Backup existing config if it exists
+if [ -f "$NGINX_CONF" ]; then
+    cp "$NGINX_CONF" "${NGINX_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
+    echo "✅ Backed up existing nginx.conf"
+fi
 
 cat > $NGINX_CONF << EOF
-# Frontend - Vue.js static files
-location / {
-    root $PROJECT_PATH/frontend/dist;
-    try_files \$uri \$uri/ /index.html;
-    expires 1d;
-    add_header Cache-Control "public, immutable";
-}
+server {
+    listen      ${SERVER_IP}:80;
+    server_name ${DOMAIN} www.${DOMAIN};
+    root        ${PROJECT_PATH}/frontend/dist;
+    index       index.html;
 
-# API - Proxy to Node.js
-location /api/ {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade \$http_upgrade;
-    proxy_set_header Connection 'upgrade';
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-    proxy_cache_bypass \$http_upgrade;
+    access_log  /var/log/nginx/domains/${DOMAIN}.log combined;
+    access_log  /var/log/nginx/domains/${DOMAIN}.bytes bytes;
+    error_log   /var/log/nginx/domains/${DOMAIN}.error.log error;
 
-    # Timeouts
-    proxy_connect_timeout 60s;
-    proxy_send_timeout 60s;
-    proxy_read_timeout 60s;
-}
+    include /home/$USER/conf/web/${DOMAIN}/nginx.forcessl.conf*;
 
-# Health check
-location /health {
-    proxy_pass http://127.0.0.1:3000;
-    access_log off;
-}
+    # ===========================
+    # 1. SPA routing fallback
+    # ===========================
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
 
-# Static assets caching
-location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-    root $PROJECT_PATH/frontend/dist;
-    expires 1y;
-    add_header Cache-Control "public, immutable";
-    access_log off;
+    # ===========================
+    # 2. Static files caching
+    # ===========================
+    location ~* ^.+\.(jpeg|jpg|png|webp|gif|bmp|ico|svg|css|js|woff|woff2|ttf|eot)$ {
+        expires max;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # ===========================
+    # 3. Node API proxy
+    # ===========================
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # ===========================
+    # 4. Health check
+    # ===========================
+    location /health {
+        proxy_pass http://127.0.0.1:3000;
+        access_log off;
+    }
+
+    # ===========================
+    # 5. Errors & stats
+    # ===========================
+    location /error/ {
+        alias /home/$USER/web/${DOMAIN}/document_errors/;
+    }
+
+    location /vstats/ {
+        alias /home/$USER/web/${DOMAIN}/stats/;
+        include /home/$USER/web/${DOMAIN}/stats/auth.conf*;
+    }
+
+    include /etc/nginx/conf.d/phpmyadmin.inc*;
+    include /etc/nginx/conf.d/phppgadmin.inc*;
+    include /home/$USER/conf/web/${DOMAIN}/nginx.conf_*;
 }
 EOF
 
-# Include in main Nginx config
-MAIN_NGINX="/home/$USER/conf/web/$DOMAIN/nginx.conf"
-if [ -f "$MAIN_NGINX" ]; then
-    if ! grep -q "nginx.conf_link_rotator" $MAIN_NGINX; then
-        # Добавляем include перед первым location
-        sed -i "/location \/ {/i \    include $NGINX_CONF;" $MAIN_NGINX
-    fi
+chown $USER:$USER $NGINX_CONF
+
+# Test nginx configuration
+if nginx -t 2>/dev/null; then
+    systemctl reload nginx
+    echo "✅ Nginx configured and reloaded"
+else
+    echo "⚠️  Nginx configuration test failed, please check manually"
+    echo "Run: nginx -t"
 fi
-
-# Reload Nginx
-systemctl reload nginx
-
-echo "✅ Nginx configured"
 
 echo ""
 echo "======================================"

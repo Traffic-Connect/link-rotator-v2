@@ -2,6 +2,7 @@
 
 # ============================================
 # Link Rotator - Update Script
+# For Hestia Control Panel (Ubuntu/Debian)
 # ============================================
 
 set -e
@@ -11,13 +12,20 @@ echo "Link Rotator - Update"
 echo "======================================"
 echo ""
 
+# Проверка прав root
+if [ "$EUID" -ne 0 ]; then
+   echo "❌ Please run as root (sudo bash update.sh)"
+   exit 1
+fi
+
 # Переменные
 DOMAIN=""
 USER=""
 
 # Получаем параметры
-read -p "Domain: " DOMAIN
-read -p "Hestia user: " USER
+echo "📝 Enter configuration:"
+read -p "Domain (e.g., rotator.example.com): " DOMAIN
+read -p "Hestia user (e.g., admin): " USER
 
 if [ -z "$DOMAIN" ] || [ -z "$USER" ]; then
     echo "❌ Domain and User are required!"
@@ -31,56 +39,169 @@ if [ ! -d "$PROJECT_PATH" ]; then
     exit 1
 fi
 
+echo ""
+echo "Configuration:"
+echo "  Domain: $DOMAIN"
+echo "  User: $USER"
+echo "  Path: $PROJECT_PATH"
+echo ""
+read -p "Continue? (y/n): " CONTINUE
+
+if [ "$CONTINUE" != "y" ]; then
+    echo "Update cancelled"
+    exit 0
+fi
+
 cd $PROJECT_PATH
 
-echo "1. Creating backup..."
+echo ""
+echo "======================================"
+echo "1. Creating Backup"
+echo "======================================"
+
 BACKUP_DIR="/home/$USER/backups/link-rotator-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
-cp -r frontend/dist "$BACKUP_DIR/" 2>/dev/null || echo "No previous build to backup"
-cp .env "$BACKUP_DIR/" 2>/dev/null || echo "No .env to backup"
+
+# Backup files
+cp -r frontend/dist "$BACKUP_DIR/" 2>/dev/null || echo "⚠️  No previous build to backup"
+cp .env "$BACKUP_DIR/" 2>/dev/null || echo "⚠️  No .env to backup"
+cp package.json "$BACKUP_DIR/" 2>/dev/null
+cp package-lock.json "$BACKUP_DIR/" 2>/dev/null
+cp ecosystem.config.js "$BACKUP_DIR/" 2>/dev/null
+
 echo "✅ Backup created at $BACKUP_DIR"
 
 echo ""
-echo "2. Pulling latest code..."
-# Если используется Git:
-# git pull origin main
-echo "⚠️  Make sure you uploaded the latest code to $PROJECT_PATH"
-read -p "Press Enter to continue..."
+echo "======================================"
+echo "2. Stopping Application"
+echo "======================================"
+
+sudo -u $USER pm2 stop link-rotator 2>/dev/null || echo "⚠️  Application not running"
 
 echo ""
-echo "3. Installing backend dependencies..."
+echo "======================================"
+echo "3. Updating Code"
+echo "======================================"
+
+# Если используется Git:
+if [ -d ".git" ]; then
+    echo "Pulling from Git..."
+    sudo -u $USER git pull origin main
+else
+    echo "⚠️  Not a Git repository"
+    echo "Make sure you uploaded the latest code to $PROJECT_PATH"
+    read -p "Press Enter to continue..."
+fi
+
+echo ""
+echo "======================================"
+echo "4. Installing Backend Dependencies"
+echo "======================================"
+
 sudo -u $USER npm install --production
 
 echo ""
-echo "4. Building frontend..."
+echo "======================================"
+echo "5. Building Frontend"
+echo "======================================"
+
 cd frontend
-sudo -u $USER npm install --legacy-peer-deps
+
+# Update frontend dependencies if package.json changed
+if [ -f "$BACKUP_DIR/frontend/package.json" ]; then
+    if ! diff -q package.json "$BACKUP_DIR/frontend/package.json" > /dev/null 2>&1; then
+        echo "📦 Frontend dependencies changed, updating..."
+        sudo -u $USER npm install --legacy-peer-deps
+    else
+        echo "✅ Frontend dependencies unchanged"
+    fi
+else
+    sudo -u $USER npm install --legacy-peer-deps
+fi
+
+# Build
+echo "Building Vue.js application..."
 sudo -u $USER npm run build
+
 cd ..
 
 echo ""
-echo "5. Restarting application..."
-sudo -u $USER pm2 restart link-rotator
+echo "======================================"
+echo "6. Checking Environment"
+echo "======================================"
+
+if [ -f ".env" ]; then
+    echo "✅ .env file exists"
+else
+    echo "⚠️  Warning: .env file not found!"
+    echo "You may need to create it manually"
+fi
+
+echo ""
+echo "======================================"
+echo "7. Restarting Application"
+echo "======================================"
+
+# Start/restart with PM2
+sudo -u $USER pm2 restart link-rotator 2>/dev/null || sudo -u $USER pm2 start ecosystem.config.js
+
+# Save PM2 configuration
+sudo -u $USER pm2 save
 
 # Wait for app to start
 echo "Waiting for application to start..."
-sleep 3
+sleep 5
 
 # Check if app is running
 if sudo -u $USER pm2 list | grep -q "link-rotator.*online"; then
     echo "✅ Application restarted successfully"
+
+    # Show status
+    echo ""
+    sudo -u $USER pm2 list | grep link-rotator
 else
     echo "⚠️  Warning: Application might not be running properly"
-    echo "Check logs: pm2 logs link-rotator"
+    echo ""
+    echo "Check logs with: sudo su - $USER -c 'pm2 logs link-rotator'"
+    echo "Or restore backup from: $BACKUP_DIR"
 fi
 
 echo ""
-echo "✅ Update complete!"
+echo "======================================"
+echo "8. Testing Application"
+echo "======================================"
+
+# Test health endpoint
+echo "Testing health endpoint..."
+sleep 2
+
+if curl -s http://127.0.0.1:3000/health > /dev/null 2>&1; then
+    echo "✅ Application health check passed"
+else
+    echo "⚠️  Health check failed"
+    echo "Check logs: sudo su - $USER -c 'pm2 logs link-rotator'"
+fi
+
 echo ""
-echo "📋 Useful commands:"
+echo "======================================"
+echo "✅ Update Complete!"
+echo "======================================"
+echo ""
+echo "📋 Summary:"
+echo "  Domain: https://$DOMAIN"
+echo "  Status: $(sudo -u $USER pm2 list | grep link-rotator | awk '{print $10}')"
+echo "  Backup: $BACKUP_DIR"
+echo ""
+echo "🔧 Useful commands:"
+echo "  sudo su - $USER"
 echo "  pm2 list                    - View running processes"
 echo "  pm2 logs link-rotator      - View application logs"
 echo "  pm2 restart link-rotator   - Restart application"
+echo "  pm2 monit                   - Monitor resources"
 echo ""
-echo "📁 Backup location: $BACKUP_DIR"
+echo "🔄 Rollback (if needed):"
+echo "  1. sudo su - $USER"
+echo "  2. pm2 stop link-rotator"
+echo "  3. cp -r $BACKUP_DIR/dist $PROJECT_PATH/frontend/"
+echo "  4. pm2 restart link-rotator"
 echo ""

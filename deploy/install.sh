@@ -1,10 +1,5 @@
 #!/bin/bash
 
-# ============================================
-# Link Rotator - Production Installation Script
-# For Hestia Control Panel (Ubuntu/Debian)
-# ============================================
-
 set -e
 
 echo "======================================"
@@ -12,33 +7,27 @@ echo "Link Rotator - Production Setup"
 echo "======================================"
 echo ""
 
-# Проверка прав root
 if [ "$EUID" -ne 0 ]; then
    echo "❌ Please run as root (sudo bash install.sh)"
    exit 1
 fi
 
-# Переменные
-DOMAIN=""
-USER=""
-PROJECT_PATH=""
-ADMIN_EMAIL="adminseo@trafficconnect.com"
-JWT_SECRET=$(openssl rand -base64 32)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_PATH="$(dirname "$SCRIPT_DIR")"
 
-# Получаем параметры
-echo "📝 Enter configuration:"
-read -p "Domain (e.g., rotator.example.com): " DOMAIN
-read -p "Hestia user (e.g., admin): " USER
-
-if [ -z "$DOMAIN" ] || [ -z "$USER" ]; then
-    echo "❌ Domain and User are required!"
+if [[ "$PROJECT_PATH" =~ ^/home/([^/]+)/web/([^/]+)/public_html$ ]]; then
+    USER="${BASH_REMATCH[1]}"
+    DOMAIN="${BASH_REMATCH[2]}"
+else
+    echo "❌ Cannot determine USER and DOMAIN from path: $PROJECT_PATH"
+    echo "Expected format: /home/USER/web/DOMAIN/public_html"
     exit 1
 fi
 
-PROJECT_PATH="/home/$USER/web/$DOMAIN/public_html"
+ADMIN_EMAIL="adminseo@trafficconnect.com"
+JWT_SECRET=$(openssl rand -base64 32)
 
-echo ""
-echo "Configuration:"
+echo "Auto-detected configuration:"
 echo "  Domain: $DOMAIN"
 echo "  User: $USER"
 echo "  Path: $PROJECT_PATH"
@@ -55,10 +44,8 @@ echo "======================================"
 echo "1. Installing System Dependencies"
 echo "======================================"
 
-# Update system
 apt-get update
 
-# Install Node.js 20
 if ! command -v node &> /dev/null; then
     echo "Installing Node.js 20..."
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -67,20 +54,16 @@ else
     echo "✅ Node.js already installed: $(node -v)"
 fi
 
-# Install MongoDB 4.4
 if ! command -v mongod &> /dev/null; then
-    echo "Installing MongoDB 4.4..."
+    echo "Installing MongoDB 7.0..."
 
-    # Import MongoDB public key
-    wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
 
-    # Add MongoDB repository
-    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
 
     apt-get update
     apt-get install -y mongodb-org
 
-    # Start MongoDB
     systemctl start mongod
     systemctl enable mongod
 
@@ -89,12 +72,10 @@ else
     echo "✅ MongoDB already installed"
 fi
 
-# Install Redis
 if ! command -v redis-server &> /dev/null; then
     echo "Installing Redis..."
     apt-get install -y redis-server
 
-    # Configure Redis
     sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
     sed -i 's/^# maxmemory <bytes>/maxmemory 256mb/' /etc/redis/redis.conf
     sed -i 's/^# maxmemory-policy noeviction/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
@@ -107,7 +88,6 @@ else
     echo "✅ Redis already installed"
 fi
 
-# Install PM2
 if ! command -v pm2 &> /dev/null; then
     echo "Installing PM2..."
     npm install -g pm2
@@ -122,7 +102,6 @@ echo "======================================"
 echo "2. Setting Up Project"
 echo "======================================"
 
-# Убедимся, что директория существует
 if [ ! -d "$PROJECT_PATH" ]; then
     echo "❌ Project directory not found at $PROJECT_PATH"
     echo "Please upload your project files to $PROJECT_PATH first"
@@ -131,7 +110,6 @@ fi
 
 cd $PROJECT_PATH
 
-# Set ownership
 chown -R $USER:$USER $PROJECT_PATH
 
 echo ""
@@ -139,10 +117,8 @@ echo "======================================"
 echo "3. Installing Node.js Dependencies"
 echo "======================================"
 
-# Backend dependencies
 sudo -u $USER npm install --production
 
-# Frontend dependencies and build
 cd frontend
 sudo -u $USER npm install --legacy-peer-deps
 sudo -u $USER npm run build
@@ -153,10 +129,9 @@ echo "======================================"
 echo "4. Configuring Environment"
 echo "======================================"
 
-# Create .env file
 cat > .env << EOF
 NODE_ENV=production
-PORT=3000
+PORT=3001
 MONGODB_URI=mongodb://127.0.0.1:27017/link_rotator
 REDIS_URL=redis://127.0.0.1:6379
 JWT_SECRET=$JWT_SECRET
@@ -172,7 +147,6 @@ echo "======================================"
 echo "5. Initializing Database"
 echo "======================================"
 
-# Создаем индексы MongoDB
 mongosh link_rotator --eval "
 db.links.createIndex({ 'key': 1 }, { unique: true });
 db.links.createIndex({ 'userId': 1, 'createdAt': -1 });
@@ -195,21 +169,17 @@ echo "======================================"
 echo "6. Creating PM2 Process"
 echo "======================================"
 
-# Копируем ecosystem config если его нет
 if [ ! -f "ecosystem.config.js" ]; then
     cp deploy/ecosystem.config.js ecosystem.config.js
 fi
 
 chown $USER:$USER ecosystem.config.js
 
-# Create logs directory
 mkdir -p logs
 chown -R $USER:$USER logs
 
-# Stop any existing process
 sudo -u $USER pm2 delete link-rotator 2>/dev/null || true
 
-# Start application with PM2
 sudo -u $USER pm2 start ecosystem.config.js
 sudo -u $USER pm2 save
 
@@ -220,13 +190,10 @@ echo "======================================"
 echo "7. Configuring Nginx"
 echo "======================================"
 
-# Get server IP
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
-# Create full Nginx configuration
 NGINX_CONF="/home/$USER/conf/web/$DOMAIN/nginx.conf"
 
-# Backup existing config if it exists
 if [ -f "$NGINX_CONF" ]; then
     cp "$NGINX_CONF" "${NGINX_CONF}.backup.$(date +%Y%m%d_%H%M%S)"
     echo "✅ Backed up existing nginx.conf"
@@ -245,27 +212,18 @@ server {
 
     include /home/$USER/conf/web/${DOMAIN}/nginx.forcessl.conf*;
 
-    # ===========================
-    # 1. SPA routing fallback
-    # ===========================
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # ===========================
-    # 2. Static files caching
-    # ===========================
     location ~* ^.+\.(jpeg|jpg|png|webp|gif|bmp|ico|svg|css|js|woff|woff2|ttf|eot)$ {
         expires max;
         add_header Cache-Control "public, immutable";
         access_log off;
     }
 
-    # ===========================
-    # 3. Node API proxy
-    # ===========================
     location /api/ {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -275,23 +233,16 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_cache_bypass \$http_upgrade;
 
-        # Timeouts
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
     }
 
-    # ===========================
-    # 4. Health check
-    # ===========================
     location /health {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3001;
         access_log off;
     }
 
-    # ===========================
-    # 5. Errors & stats
-    # ===========================
     location /error/ {
         alias /home/$USER/web/${DOMAIN}/document_errors/;
     }
@@ -309,7 +260,6 @@ EOF
 
 chown $USER:$USER $NGINX_CONF
 
-# Test nginx configuration
 if nginx -t 2>/dev/null; then
     systemctl reload nginx
     echo "✅ Nginx configured and reloaded"
@@ -323,7 +273,6 @@ echo "======================================"
 echo "8. Creating Admin User"
 echo "======================================"
 
-# Run admin creation script
 cd $PROJECT_PATH
 sudo -u $USER node scripts/create-admin.js
 

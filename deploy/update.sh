@@ -1,10 +1,5 @@
 #!/bin/bash
 
-# ============================================
-# Link Rotator - Update Script
-# For Hestia Control Panel (Ubuntu/Debian)
-# ============================================
-
 set -e
 
 echo "======================================"
@@ -12,17 +7,14 @@ echo "Link Rotator - Update"
 echo "======================================"
 echo ""
 
-# Проверка прав root
 if [ "$EUID" -ne 0 ]; then
    echo "❌ Please run as root (sudo bash update.sh)"
    exit 1
 fi
 
-# Переменные
 DOMAIN=""
 USER=""
 
-# Получаем параметры
 echo "📝 Enter configuration:"
 read -p "Domain (e.g., rotator.example.com): " DOMAIN
 read -p "Hestia user (e.g., admin): " USER
@@ -62,7 +54,6 @@ echo "======================================"
 BACKUP_DIR="/home/$USER/backups/link-rotator-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 
-# Backup files
 cp -r frontend/dist "$BACKUP_DIR/" 2>/dev/null || echo "⚠️  No previous build to backup"
 cp .env "$BACKUP_DIR/" 2>/dev/null || echo "⚠️  No .env to backup"
 cp package.json "$BACKUP_DIR/" 2>/dev/null
@@ -83,8 +74,10 @@ echo "======================================"
 echo "3. Updating Code"
 echo "======================================"
 
-# Если используется Git:
 if [ -d ".git" ]; then
+    echo "Fixing .git permissions..."
+    chown -R $USER:$USER .git
+
     echo "Pulling from Git..."
     sudo -u $USER git pull origin main
 else
@@ -107,9 +100,8 @@ echo "======================================"
 
 cd frontend
 
-# Update frontend dependencies if package.json changed
-if [ -f "$BACKUP_DIR/frontend/package.json" ]; then
-    if ! diff -q package.json "$BACKUP_DIR/frontend/package.json" > /dev/null 2>&1; then
+if [ -f "$BACKUP_DIR/package.json" ]; then
+    if ! diff -q package.json "$BACKUP_DIR/package.json" > /dev/null 2>&1; then
         echo "📦 Frontend dependencies changed, updating..."
         sudo -u $USER npm install --legacy-peer-deps
     else
@@ -119,7 +111,6 @@ else
     sudo -u $USER npm install --legacy-peer-deps
 fi
 
-# Build
 echo "Building Vue.js application..."
 sudo -u $USER npm run build
 
@@ -134,7 +125,6 @@ if [ -f ".env" ]; then
     echo "✅ .env file exists"
 else
     echo "⚠️  Warning: .env file not found!"
-    echo "You may need to create it manually"
 fi
 
 echo ""
@@ -142,21 +132,14 @@ echo "======================================"
 echo "7. Restarting Application"
 echo "======================================"
 
-# Start/restart with PM2
 sudo -u $USER pm2 restart link-rotator 2>/dev/null || sudo -u $USER pm2 start ecosystem.config.js
-
-# Save PM2 configuration
 sudo -u $USER pm2 save
 
-# Wait for app to start
 echo "Waiting for application to start..."
 sleep 5
 
-# Check if app is running
 if sudo -u $USER pm2 list | grep -q "link-rotator.*online"; then
     echo "✅ Application restarted successfully"
-
-    # Show status
     echo ""
     sudo -u $USER pm2 list | grep link-rotator
 else
@@ -171,11 +154,10 @@ echo "======================================"
 echo "8. Testing Application"
 echo "======================================"
 
-# Test health endpoint
 echo "Testing health endpoint..."
 sleep 2
 
-if curl -s http://127.0.0.1:3000/health > /dev/null 2>&1; then
+if curl -s http://127.0.0.1:3001/health > /dev/null 2>&1; then
     echo "✅ Application health check passed"
 else
     echo "⚠️  Health check failed"

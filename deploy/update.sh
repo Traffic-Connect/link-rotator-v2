@@ -71,13 +71,18 @@ sudo -u $USER pm2 stop link-rotator 2>/dev/null || echo "⚠️  Application not
 
 echo ""
 echo "======================================"
-echo "3. Updating Code"
+echo "3. Fixing Permissions"
+echo "======================================"
+
+echo "Setting correct ownership..."
+chown -R $USER:$USER $PROJECT_PATH
+
+echo ""
+echo "======================================"
+echo "4. Updating Code"
 echo "======================================"
 
 if [ -d ".git" ]; then
-    echo "Fixing .git permissions..."
-    chown -R $USER:$USER .git
-
     echo "Pulling from Git..."
     sudo -u $USER git pull origin main
 else
@@ -88,14 +93,14 @@ fi
 
 echo ""
 echo "======================================"
-echo "4. Installing Backend Dependencies"
+echo "5. Installing Backend Dependencies"
 echo "======================================"
 
 sudo -u $USER npm install --production
 
 echo ""
 echo "======================================"
-echo "5. Building Frontend"
+echo "6. Building Frontend"
 echo "======================================"
 
 cd frontend
@@ -118,7 +123,7 @@ cd ..
 
 echo ""
 echo "======================================"
-echo "6. Checking Environment"
+echo "7. Checking Environment"
 echo "======================================"
 
 if [ -f ".env" ]; then
@@ -129,7 +134,7 @@ fi
 
 echo ""
 echo "======================================"
-echo "7. Restarting Application"
+echo "8. Restarting Application"
 echo "======================================"
 
 sudo -u $USER pm2 restart link-rotator 2>/dev/null || sudo -u $USER pm2 start ecosystem.config.js
@@ -151,7 +156,7 @@ fi
 
 echo ""
 echo "======================================"
-echo "8. Testing Application"
+echo "9. Testing Application"
 echo "======================================"
 
 echo "Testing health endpoint..."

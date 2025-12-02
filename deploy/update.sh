@@ -12,27 +12,19 @@ if [ "$EUID" -ne 0 ]; then
    exit 1
 fi
 
-DOMAIN=""
-USER=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_PATH="$(dirname "$SCRIPT_DIR")"
 
-echo "📝 Enter configuration:"
-read -p "Domain (e.g., rotator.example.com): " DOMAIN
-read -p "Hestia user (e.g., admin): " USER
-
-if [ -z "$DOMAIN" ] || [ -z "$USER" ]; then
-    echo "❌ Domain and User are required!"
+if [[ "$PROJECT_PATH" =~ ^/home/([^/]+)/web/([^/]+)/public_html$ ]]; then
+    USER="${BASH_REMATCH[1]}"
+    DOMAIN="${BASH_REMATCH[2]}"
+else
+    echo "❌ Cannot determine USER and DOMAIN from path: $PROJECT_PATH"
+    echo "Expected format: /home/USER/web/DOMAIN/public_html"
     exit 1
 fi
 
-PROJECT_PATH="/home/$USER/web/$DOMAIN/public_html"
-
-if [ ! -d "$PROJECT_PATH" ]; then
-    echo "❌ Project not found at $PROJECT_PATH"
-    exit 1
-fi
-
-echo ""
-echo "Configuration:"
+echo "Auto-detected configuration:"
 echo "  Domain: $DOMAIN"
 echo "  User: $USER"
 echo "  Path: $PROJECT_PATH"

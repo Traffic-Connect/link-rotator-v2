@@ -25,6 +25,7 @@ else
 fi
 
 ADMIN_EMAIL="adminseo@trafficconnect.com"
+ADMIN_PASSWORD="m9OviUHdCOKM"
 JWT_SECRET=$(openssl rand -base64 32)
 
 echo "Auto-detected configuration:"
@@ -91,7 +92,6 @@ fi
 if ! command -v pm2 &> /dev/null; then
     echo "Installing PM2..."
     npm install -g pm2
-    pm2 startup systemd -u $USER --hp /home/$USER
     echo "✅ PM2 installed"
 else
     echo "✅ PM2 already installed"
@@ -111,6 +111,14 @@ fi
 cd $PROJECT_PATH
 
 chown -R $USER:$USER $PROJECT_PATH
+
+# Создаем и настраиваем директории PM2
+echo "Setting up PM2 directories..."
+if [ ! -d "/home/$USER/.pm2" ]; then
+    mkdir -p /home/$USER/.pm2
+fi
+chown -R $USER:$USER /home/$USER/.pm2
+chmod -R 755 /home/$USER/.pm2
 
 echo ""
 echo "======================================"
@@ -136,6 +144,8 @@ MONGODB_URI=mongodb://127.0.0.1:27017/link_rotator
 REDIS_URL=redis://127.0.0.1:6379
 JWT_SECRET=$JWT_SECRET
 ROTATION_CACHE_TTL=3600
+ADMIN_EMAIL=$ADMIN_EMAIL
+ADMIN_PASSWORD=$ADMIN_PASSWORD
 EOF
 
 chown $USER:$USER .env
@@ -182,8 +192,11 @@ sudo -u $USER pm2 delete link-rotator 2>/dev/null || true
 
 sudo -u $USER pm2 start ecosystem.config.js
 sudo -u $USER pm2 save
+sudo -u $USER pm2 startup systemd -u $USER --hp /home/$USER | grep "sudo" | bash || true
 
 echo "✅ Application started with PM2"
+
+sleep 3
 
 echo ""
 echo "======================================"
@@ -276,17 +289,35 @@ echo "======================================"
 cd $PROJECT_PATH
 sudo -u $USER node scripts/create-admin.js
 
+sleep 2
+
+echo ""
+echo "======================================"
+echo "9. Testing Application"
+echo "======================================"
+
+echo "Testing health endpoint..."
+if curl -s http://127.0.0.1:3001/health > /dev/null 2>&1; then
+    echo "✅ Application health check passed"
+else
+    echo "⚠️  Health check failed"
+    echo "Check logs: sudo su - $USER -c 'pm2 logs link-rotator'"
+fi
+
 echo ""
 echo "======================================"
 echo "✅ Installation Complete!"
 echo "======================================"
 echo ""
 echo "📋 Configuration:"
-echo "  Domain: https://$DOMAIN"
-echo "  Admin Email: $ADMIN_EMAIL"
-echo "  Admin Password: m9OviUHdCOKM"
+echo "  🌐 Domain:   https://$DOMAIN"
+echo "  📧 Email:    $ADMIN_EMAIL"
+echo "  🔑 Password: $ADMIN_PASSWORD"
 echo ""
 echo "⚠️  IMPORTANT: Save these credentials!"
+echo ""
+echo "📊 Application Status:"
+sudo -u $USER pm2 list | grep link-rotator || echo "  PM2 process not found"
 echo ""
 echo "📝 Next steps:"
 echo "  1. Make sure domain $DOMAIN points to this server IP"
@@ -299,6 +330,7 @@ echo "  pm2 list                    - View running processes"
 echo "  pm2 logs link-rotator      - View application logs"
 echo "  pm2 restart link-rotator   - Restart application"
 echo "  pm2 stop link-rotator      - Stop application"
+echo "  pm2 monit                   - Monitor resources"
 echo ""
 echo "📁 Project location: $PROJECT_PATH"
 echo ""

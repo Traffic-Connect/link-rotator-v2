@@ -7,6 +7,8 @@ services:
     working_dir: /app
     volumes:
       - ./frontend:/app
+    environment:
+      VITE_CLOUDFLARE_BASE_DOMAIN: ${VITE_CLOUDFLARE_BASE_DOMAIN:-your-cf-domain.com}
     command: sh -c "npm install --legacy-peer-deps && npm run build"
     networks:
       - app-network
@@ -25,6 +27,8 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: your-secret-key-change-this
       PORT: 3000
+      MANAGER_BEARER: ${MANAGER_BEARER:-}
+      MANAGER_EMAIL: ${MANAGER_EMAIL:-}
     depends_on:
       - mongo
       - redis

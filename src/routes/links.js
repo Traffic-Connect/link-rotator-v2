@@ -10,6 +10,26 @@ router.get('/r/:key', linkController.redirect);
 // Все остальные роуты требуют аутентификации
 router.use(authenticate);
 
+const cloudflareValidators = [
+    body('cloudflare').optional().custom(value => {
+        if (typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error('Cloudflare payload must be an object');
+        }
+        if (value.enabled) {
+            if (!value.credentialId) {
+                throw new Error('Cloudflare credential is required');
+            }
+            if (!value.link || typeof value.link !== 'string' || !value.link.trim()) {
+                throw new Error('Cloudflare Link is required');
+            }
+        }
+        return true;
+    }),
+    body('cloudflare.enabled').optional().isBoolean(),
+    body('cloudflare.credentialId').optional().isMongoId().withMessage('Invalid Cloudflare credential'),
+    body('cloudflare.link').optional().isString().trim().withMessage('Cloudflare Link must be a string')
+];
+
 // Получить все ссылки текущего пользователя
 router.get('/', linkController.getAll);
 
@@ -35,7 +55,7 @@ router.post('/',
         body('redirects.*')
             .isURL({ require_protocol: true })
             .withMessage('Each redirect must be a valid URL')
-    ],
+    ].concat(cloudflareValidators),
     linkController.create
 );
 
@@ -59,7 +79,7 @@ router.put('/:id',
             .optional()
             .isURL({ require_protocol: true })
             .withMessage('Each redirect must be a valid URL')
-    ],
+    ].concat(cloudflareValidators),
     linkController.update
 );
 

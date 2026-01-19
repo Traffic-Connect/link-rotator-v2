@@ -27,6 +27,42 @@ const router = createRouter({
             meta: { requiresAuth: true, requiresAdmin: true }
         },
         {
+            path: '/cloudflare',
+            name: 'CloudflareCredentials',
+            component: () => import('../views/CloudflareCredentialsView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true }
+        },
+        {
+            path: '/cloudflare-cache',
+            name: 'CloudflareCaching',
+            component: () => import('../views/CloudflareCachingView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true }
+        },
+        {
+            path: '/cloudflare-cloak',
+            name: 'CloudflareCloak',
+            component: () => import('../views/CloudflareCloakView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true }
+        },
+        {
+            path: '/cloudflare-wa-money',
+            name: 'CloudflareWaMoney',
+            component: () => import('../views/CloudflareWaMoneyView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true }
+        },
+        {
+            path: '/cloudflare-redirect',
+            name: 'CloudflareRedirect',
+            component: () => import('../views/CloudflareRedirectView.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true }
+        },
+        // {
+        //     path: '/subdomains',
+        //     name: 'Subdomains',
+        //     component: () => import('../views/SubdomainsView.vue'),
+        //     meta: { requiresAuth: true, requiresAdmin: true }
+        // },
+        {
             path: '/users',
             name: 'Users',
             component: () => import('../views/UsersView.vue'),

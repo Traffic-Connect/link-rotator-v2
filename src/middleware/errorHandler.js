@@ -43,13 +43,26 @@ const errorHandler = (err, req, res, next) => {
     }
 
     // Default error
-    const statusCode = err.statusCode || 500;
+    const statusCode = err.statusCode || err.status || 500;
     const message = err.message || 'Internal server error';
 
-    res.status(statusCode).json({
-        error: message,
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-    });
+    const payload = {
+        error: message
+    };
+
+    if (err.messages && err.messages.length) {
+        payload.messages = err.messages;
+    }
+
+    if (err.details && err.details.length) {
+        payload.details = err.details;
+    }
+
+    if (process.env.NODE_ENV === 'development' && err.stack) {
+        payload.stack = err.stack;
+    }
+
+    res.status(statusCode).json(payload);
 };
 
 module.exports = { errorHandler };

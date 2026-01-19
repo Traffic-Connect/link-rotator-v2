@@ -5,6 +5,17 @@ db = db.getSiblingDB('link_rotator');
 db.links.createIndex({ "key": 1 }, { unique: true });
 db.links.createIndex({ "userId": 1, "createdAt": -1 });
 db.links.createIndex({ "userId": 1, "isActive": 1 });
+db.links.createIndex(
+    { "cloudflare.credential": 1, "cloudflare.link": 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            "cloudflare.enabled": true,
+            "cloudflare.credential": { $exists: true },
+            "cloudflare.link": { $exists: true }
+        }
+    }
+);
 
 db.clicks.createIndex({ "linkId": 1, "createdAt": -1 });
 db.clicks.createIndex({ "redirectId": 1, "createdAt": -1 });
@@ -12,6 +23,12 @@ db.clicks.createIndex({ "createdAt": -1 });
 
 db.users.createIndex({ "email": 1 }, { unique: true });
 db.users.createIndex({ "isActive": 1 });
+
+db.cloudflarecredentials.createIndex({ "apiToken": 1 }, { unique: true });
+db.cloudflarecredentials.createIndex({ "login": 1, "accountId": 1 }, { unique: true });
+
+db.subdomains.createIndex({ "subdomain": 1, "domain": 1 }, { unique: true });
+db.subdomains.createIndex({ "fqdn": 1 }, { unique: true });
 
 print("MongoDB indexes created");
 
@@ -26,7 +43,7 @@ const existingAdmin = db.users.findOne({ email: adminEmail });
 if (!existingAdmin) {
     // Bcrypt hash для пароля "m9OviUHdCOKM" (10 rounds)
     // Сгенерирован заранее: bcrypt.hashSync('m9OviUHdCOKM', 10)
-    const hashedPassword = "$2a$10$5YJqE3xHKvN3oPYLmP0JbeQwKjF0tM0C3Z8EJYVz5LKFVNqXZm7Wy";
+    const hashedPassword = "$2a$10$ezrKIEedBT7OBnUua/wfc.q.AJc9kDCKR8VnS0Tvx7cgrQG4ns3wO";
 
     db.users.insertOne({
         name: "Admin SEO",

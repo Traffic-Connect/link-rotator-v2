@@ -2,7 +2,7 @@
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
       <router-link class="navbar-brand" to="/links">
-        <i class="bi bi-link-45deg"></i> Link Rotator
+        <i class="bi bi-link-45deg"></i> T6 Cloud Manager
       </router-link>
 
       <button
@@ -26,6 +26,52 @@
               <i class="bi bi-graph-up"></i> Analytics
             </router-link>
           </li>
+          <li class="nav-item" v-if="authStore.isAdmin">
+            <router-link class="nav-link" to="/cloudflare">
+              <i class="bi bi-cloud"></i> Cloudflare Workers Credentials
+            </router-link>
+          </li>
+          <li class="nav-item" v-if="authStore.isAdmin">
+            <router-link class="nav-link" to="/cloudflare-cache">
+              <i class="bi bi-lightning-charge"></i> Cloudflare Caching
+            </router-link>
+          </li>
+          <li class="nav-item dropdown" v-if="authStore.isAdmin" @click.stop>
+            <a
+                class="nav-link dropdown-toggle"
+                href="#"
+                @click.prevent="toggleCloakDropdown"
+                :class="{ show: isCloakDropdownOpen }"
+            >
+              <i class="bi bi-incognito"></i> Cloudflare Worker Cloak
+            </a>
+            <ul
+                class="dropdown-menu"
+                :class="{ show: isCloakDropdownOpen }"
+                @click.stop
+            >
+              <li>
+                <router-link class="dropdown-item" to="/cloudflare-cloak" @click="closeCloakDropdown">
+                  Classic Cloak
+                </router-link>
+              </li>
+              <li>
+                <router-link class="dropdown-item" to="/cloudflare-wa-money" @click="closeCloakDropdown">
+                  WA Money Cloak
+                </router-link>
+              </li>
+              <li>
+                <router-link class="dropdown-item" to="/cloudflare-redirect" @click="closeCloakDropdown">
+                  Redirect Cloak
+                </router-link>
+              </li>
+            </ul>
+          </li>
+          <!-- <li class="nav-item" v-if="authStore.isAdmin">
+            <router-link class="nav-link" to="/subdomains">
+              <i class="bi bi-diagram-3"></i> Subdomains
+            </router-link>
+          </li> -->
           <li class="nav-item" v-if="authStore.isAdmin">
             <router-link class="nav-link" to="/users">
               <i class="bi bi-people"></i> Users
@@ -75,19 +121,29 @@ import { useRouter } from 'vue-router'
 const authStore = useAuthStore()
 const router = useRouter()
 const isDropdownOpen = ref(false)
+const isCloakDropdownOpen = ref(false)
 
 const toggleDropdown = () => {
   isDropdownOpen.value = !isDropdownOpen.value
+}
+
+const toggleCloakDropdown = () => {
+  isCloakDropdownOpen.value = !isCloakDropdownOpen.value
 }
 
 const closeDropdown = () => {
   isDropdownOpen.value = false
 }
 
+const closeCloakDropdown = () => {
+  isCloakDropdownOpen.value = false
+}
+
 const handleClickOutside = (event) => {
   const dropdown = event.target.closest('.dropdown')
   if (!dropdown) {
     closeDropdown()
+    closeCloakDropdown()
   }
 }
 
@@ -102,6 +158,7 @@ onUnmounted(() => {
 const handleLogout = async () => {
   try {
     closeDropdown()
+    closeCloakDropdown()
     authStore.logout()
     await router.push('/login')
   } catch (error) {

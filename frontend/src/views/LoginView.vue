@@ -7,7 +7,7 @@
             <h3 class="card-title text-center mb-4">
               <i class="bi bi-link-45deg fs-1"></i>
               <br>
-              Link Rotator
+              T6 Cloud Manager
             </h3>
 
             <div v-if="error" class="alert alert-danger" role="alert">

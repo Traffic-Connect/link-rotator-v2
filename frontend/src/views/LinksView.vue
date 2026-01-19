@@ -97,6 +97,7 @@
                 <th>Key</th>
                 <th>Name</th>
                 <th>Redirects</th>
+                <th>Cloudflare</th>
                 <th>Total Clicks</th>
                 <th>{{ formatDateShort(dateFilter) }}</th>
                 <th>Actions</th>
@@ -115,10 +116,22 @@
                 </td>
                 <td>{{ link.name || '-' }}</td>
                 <td>{{ link.redirects?.length || 0 }}</td>
+                <td>
+                  <div v-if="link.cloudflare?.enabled">
+                    <span class="badge bg-warning text-dark">{{ link.cloudflare.link }}</span>
+                    <small class="text-muted d-block">
+                      Worker: {{ link.cloudflare.workerName || '-' }}
+                    </small>
+                    <small class="text-muted d-block">
+                      {{ link.cloudflare.credential?.label || link.cloudflare.credential?.login || '-' }}
+                    </small>
+                  </div>
+                  <span v-else class="text-muted">-</span>
+                </td>
                 <td><span class="badge bg-primary">{{ link.totalClicks || 0 }}</span></td>
                 <td><span class="badge bg-info">{{ link.dailyClicks || 0 }}</span></td>
                 <td>
-                  <button class="btn btn-sm btn-success" @click="copyLink(link.key)" title="Copy Link">
+                  <button class="btn btn-sm btn-success" @click="copyLink(link)" title="Copy Link">
                     <i class="bi bi-clipboard"></i>
                   </button>
                   <button class="btn btn-sm btn-warning" @click="openEditModal(link)" title="Edit">
@@ -212,10 +225,54 @@
                     required
                 ></textarea>
               </div>
+              <div class="form-check form-switch mb-3">
+                <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="createCloudflareToggle"
+                    v-model="newLink.cloudflare.enabled"
+                    :disabled="cloudflareCredentials.length === 0"
+                    @change="handleCreateCloudflareToggle"
+                >
+                <label class="form-check-label" for="createCloudflareToggle">
+                  Enable Cloudflare Worker
+                </label>
+                <small v-if="cloudflareCredentials.length === 0" class="text-muted d-block">
+                  Add credentials in the Cloudflare Workers Credentials page first.
+                </small>
+              </div>
+              <div v-if="newLink.cloudflare.enabled" class="border rounded p-3 mb-3 bg-light">
+                <div class="mb-3">
+                  <label class="form-label">Account</label>
+                  <select class="form-select" v-model="newLink.cloudflare.credentialId" required>
+                    <option value="" disabled>Select credential</option>
+                    <option v-for="cred in cloudflareCredentials" :key="cred._id" :value="cred._id">
+                      {{ cred.label }} ({{ cred.login }})
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label">Cloudflare Link</label>
+                  <input
+                      type="text"
+                      class="form-control"
+                      v-model="newLink.cloudflare.link"
+                      :placeholder="`${newLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}`"
+                      required
+                      readonly
+                  >
+                  <small class="text-muted">
+                    Final route: {{ newLink.cloudflare.link || `${newLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}` }}
+                  </small>
+                </div>
+              </div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary">Create Link</button>
+              <button type="submit" class="btn btn-primary" :disabled="creatingLink">
+                <span v-if="creatingLink" class="spinner-border spinner-border-sm me-2"></span>
+                {{ creatingLink ? 'Creating...' : 'Create Link' }}
+              </button>
             </div>
           </form>
         </div>
@@ -250,10 +307,51 @@
                     required
                 ></textarea>
               </div>
+              <div class="form-check form-switch mb-3">
+                <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="editCloudflareToggle"
+                    v-model="editingLink.cloudflare.enabled"
+                    :disabled="cloudflareCredentials.length === 0"
+                    @change="handleEditCloudflareToggle"
+                >
+                <label class="form-check-label" for="editCloudflareToggle">
+                  Enable Cloudflare Worker
+                </label>
+              </div>
+              <div v-if="editingLink.cloudflare.enabled" class="border rounded p-3 mb-3 bg-light">
+                <div class="mb-3">
+                  <label class="form-label">Account</label>
+                  <select class="form-select" v-model="editingLink.cloudflare.credentialId" required>
+                    <option value="" disabled>Select credential</option>
+                    <option v-for="cred in cloudflareCredentials" :key="cred._id" :value="cred._id">
+                      {{ cred.label }} ({{ cred.login }})
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label">Cloudflare Link</label>
+                  <input
+                      type="text"
+                      class="form-control"
+                      v-model="editingLink.cloudflare.link"
+                      :placeholder="`${editingLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}`"
+                      required
+                      readonly
+                  >
+                  <small class="text-muted">
+                    Final route: {{ editingLink.cloudflare.link || `${editingLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}` }}
+                  </small>
+                </div>
+              </div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <button type="submit" class="btn btn-primary" :disabled="updatingLink">
+                <span v-if="updatingLink" class="spinner-border spinner-border-sm me-2"></span>
+                {{ updatingLink ? 'Saving...' : 'Save Changes' }}
+              </button>
             </div>
           </form>
         </div>
@@ -263,7 +361,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import apiClient from '../api/client'
 import { Modal, Toast } from 'bootstrap'
 
@@ -271,6 +369,11 @@ const links = ref([])
 const loading = ref(true)
 const dateFilter = ref(getTodayDate())
 const exporting = ref(false)
+const creatingLink = ref(false)
+const updatingLink = ref(false)
+const cloudflareCredentials = ref([])
+
+const CLOUDFLARE_BASE_DOMAIN = (import.meta.env.VITE_CLOUDFLARE_BASE_DOMAIN || 'your-cf-domain.com').trim()
 
 const stats = ref({
   totalLinks: 0,
@@ -279,18 +382,85 @@ const stats = ref({
   activeLinks: 0
 })
 
-const newLink = ref({
-  key: '',
-  name: '',
-  redirectsText: ''
-})
+function assembleWorkerDomain(key) {
+  const sanitized = (key || '').trim().toLowerCase()
+  if (!sanitized) {
+    return CLOUDFLARE_BASE_DOMAIN
+  }
+  return `${sanitized}.${CLOUDFLARE_BASE_DOMAIN}`
+}
+
+function defaultCloudflareState(key = '') {
+  const hasCredentials = cloudflareCredentials.value.length > 0
+  return {
+    enabled: hasCredentials,
+    credentialId: hasCredentials ? cloudflareCredentials.value[0]._id : '',
+    link: assembleWorkerDomain(key)
+  }
+}
+
+function buildCloudflarePayload(model) {
+  if (!model.cloudflare?.enabled) {
+    return { enabled: false }
+  }
+  return {
+    enabled: true,
+    credentialId: model.cloudflare.credentialId,
+    link: model.cloudflare.link
+  }
+}
+
+function mapCloudflareFromLink(link) {
+  if (!link?.cloudflare?.enabled) {
+    const state = defaultCloudflareState(link?.key || '')
+    state.enabled = false
+    return state
+  }
+  return {
+    enabled: true,
+    credentialId: link.cloudflare?.credential?._id
+        || link.cloudflare?.credential
+        || (cloudflareCredentials.value[0]?._id || ''),
+    link: link.cloudflare?.link || assembleWorkerDomain(link?.key || '')
+  }
+}
+
+function ensureCredentialSelection(target) {
+  if (!target?.cloudflare) {
+    return
+  }
+  if (cloudflareCredentials.value.length === 0) {
+    target.cloudflare.enabled = false
+    target.cloudflare.credentialId = ''
+    return
+  }
+  if (!target.cloudflare.credentialId) {
+    target.cloudflare.credentialId = cloudflareCredentials.value[0]._id
+  }
+}
+
+const newLink = ref({})
+
+function resetNewLinkForm() {
+  newLink.value = {
+    key: '',
+    name: '',
+    redirectsText: '',
+    cloudflare: defaultCloudflareState('')
+  }
+}
+
+resetNewLinkForm()
 
 const editingLink = ref({
   _id: '',
   key: '',
   name: '',
-  redirectsText: ''
+  redirectsText: '',
+  cloudflare: defaultCloudflareState('')
 })
+
+const editingLinkAutoLink = ref(false)
 
 const exportData = ref({
   startDate: getFirstDayOfMonth(),
@@ -299,6 +469,30 @@ const exportData = ref({
 
 const toastMessage = ref('')
 const toast = ref(null)
+
+function shouldAutoLink(link) {
+  const expected = assembleWorkerDomain(link?.key || '')
+  const current = link?.cloudflare?.link
+  return !current || current === expected
+}
+
+function handleCreateCloudflareToggle() {
+  if (!newLink.value.cloudflare.enabled) {
+    return
+  }
+  ensureCredentialSelection(newLink.value)
+  newLink.value.cloudflare.link = assembleWorkerDomain(newLink.value.key)
+}
+
+function handleEditCloudflareToggle() {
+  if (!editingLink.value.cloudflare.enabled) {
+    editingLinkAutoLink.value = false
+    return
+  }
+  ensureCredentialSelection(editingLink.value)
+  editingLinkAutoLink.value = true
+  editingLink.value.cloudflare.link = assembleWorkerDomain(editingLink.value.key)
+}
 
 function getTodayDate() {
   const today = new Date()
@@ -315,6 +509,42 @@ function setToday() {
   dateFilter.value = getTodayDate()
   fetchLinks()
 }
+
+watch(() => newLink.value.key, () => {
+  if (newLink.value.cloudflare) {
+    newLink.value.cloudflare.link = assembleWorkerDomain(newLink.value.key)
+  }
+})
+
+watch(() => cloudflareCredentials.value.length, (count, prevCount) => {
+  if (!newLink.value.cloudflare) {
+    return
+  }
+  if (count === 0) {
+    newLink.value.cloudflare.enabled = false
+    newLink.value.cloudflare.credentialId = ''
+    newLink.value.cloudflare.link = assembleWorkerDomain(newLink.value.key)
+    return
+  }
+  if (!prevCount) {
+    newLink.value.cloudflare.enabled = true
+  }
+  ensureCredentialSelection(newLink.value)
+  newLink.value.cloudflare.link = assembleWorkerDomain(newLink.value.key)
+
+  if (editingLink.value.cloudflare?.enabled) {
+    ensureCredentialSelection(editingLink.value)
+    if (editingLinkAutoLink.value) {
+      editingLink.value.cloudflare.link = assembleWorkerDomain(editingLink.value.key)
+    }
+  }
+})
+
+watch(() => editingLink.value.key, () => {
+  if (editingLink.value.cloudflare?.enabled && editingLinkAutoLink.value) {
+    editingLink.value.cloudflare.link = assembleWorkerDomain(editingLink.value.key)
+  }
+})
 
 const fetchLinks = async () => {
   loading.value = true
@@ -335,6 +565,15 @@ const fetchLinks = async () => {
     console.error('Failed to fetch links:', error)
   } finally {
     loading.value = false
+  }
+}
+
+const fetchCloudflareCredentials = async () => {
+  try {
+    const { data } = await apiClient.get('/cloudflare/credentials')
+    cloudflareCredentials.value = data.credentials || []
+  } catch (error) {
+    console.error('Failed to fetch Cloudflare credentials:', error)
   }
 }
 
@@ -395,6 +634,8 @@ const exportCsv = async () => {
 }
 
 const createLink = async () => {
+  if (creatingLink.value) return
+  creatingLink.value = true
   try {
     const redirects = newLink.value.redirectsText
         .split('\n')
@@ -404,7 +645,8 @@ const createLink = async () => {
     await apiClient.post('/links', {
       key: newLink.value.key,
       name: newLink.value.name,
-      redirects
+      redirects,
+      cloudflare: buildCloudflarePayload(newLink.value)
     })
 
     const modalEl = document.getElementById('createLinkModal')
@@ -422,12 +664,14 @@ const createLink = async () => {
     document.body.style.removeProperty('overflow')
     document.body.style.removeProperty('padding-right')
 
-    newLink.value = { key: '', name: '', redirectsText: '' }
+    resetNewLinkForm()
 
     await fetchLinks()
     showToast('Link created successfully!')
   } catch (error) {
     alert(error.response?.data?.error || 'Failed to create link')
+  } finally {
+    creatingLink.value = false
   }
 }
 
@@ -436,7 +680,13 @@ const openEditModal = (link) => {
     _id: link._id,
     key: link.key,
     name: link.name || '',
-    redirectsText: link.redirects?.map(r => r.url).join('\n') || ''
+    redirectsText: link.redirects?.map(r => r.url).join('\n') || '',
+    cloudflare: mapCloudflareFromLink(link)
+  }
+  ensureCredentialSelection(editingLink.value)
+  editingLinkAutoLink.value = shouldAutoLink(link)
+  if (editingLink.value.cloudflare.enabled && editingLinkAutoLink.value) {
+    editingLink.value.cloudflare.link = assembleWorkerDomain(editingLink.value.key)
   }
 
   const modal = new Modal(document.getElementById('editLinkModal'))
@@ -444,6 +694,8 @@ const openEditModal = (link) => {
 }
 
 const updateLink = async () => {
+  if (updatingLink.value) return
+  updatingLink.value = true
   try {
     const redirects = editingLink.value.redirectsText
         .split('\n')
@@ -453,7 +705,8 @@ const updateLink = async () => {
     await apiClient.put(`/links/${editingLink.value._id}`, {
       key: editingLink.value.key,
       name: editingLink.value.name,
-      redirects
+      redirects,
+      cloudflare: buildCloudflarePayload(editingLink.value)
     })
 
     const modal = Modal.getInstance(document.getElementById('editLinkModal'))
@@ -463,6 +716,8 @@ const updateLink = async () => {
     showToast('Link updated successfully!')
   } catch (error) {
     alert(error.response?.data?.error || 'Failed to update link')
+  } finally {
+    updatingLink.value = false
   }
 }
 
@@ -478,9 +733,22 @@ const deleteLink = async (id) => {
   }
 }
 
-const copyLink = (key) => {
-  const url = getRedirectUrl(key)
-  navigator.clipboard.writeText(url).then(() => {
+const ensureTrailingSlash = (value) => {
+  if (!value) {
+    return value
+  }
+  return value.endsWith('/') ? value : `${value}/`
+}
+
+const copyLink = (link) => {
+  let url = ''
+  if (link?.cloudflare?.enabled && link.cloudflare?.link) {
+    const prefix = link.cloudflare.link.startsWith('http') ? '' : 'https://'
+    url = `${prefix}${link.cloudflare.link}`
+  } else {
+    url = getRedirectUrl(link.key)
+  }
+  navigator.clipboard.writeText(ensureTrailingSlash(url)).then(() => {
     showToast('Link copied to clipboard!')
   }).catch(() => {
     alert('Failed to copy link')
@@ -512,6 +780,7 @@ const showToast = (message) => {
 
 onMounted(() => {
   fetchLinks()
+  fetchCloudflareCredentials()
 })
 </script>
 

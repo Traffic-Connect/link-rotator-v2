@@ -159,6 +159,24 @@ GET  /api/stats/dashboard
 - ⚡ Latency 5-15ms (95 percentile)
 - 💾 Memory ~50-150MB
 
+## 🆕 Cloudflare воркеры и сервисы
+
+- Что добавилось:
+  - Cloudflare-воркер для каждой ссылки: в `Link` есть `cloudflare.*`; `linkController` при создании/обновлении поднимает скрипт, route и DNS через `cloudflareManager`, чистит при удалении; Redis по-прежнему кэширует ротацию.
+  - Клоакинг/редиректы: три шаблона воркеров (`src/cloudflare_worker_cloak.js`, `src/cloudflare_worker_cloak_redirect.js`, `src/cloudflare_worker_cloak_wa_money.js`).
+  - Батчевые Cloudflare джобы: кеш-правила (`/api/cloudflare-cache`), cloak (`/api/cloudflare-cloak`), redirect cloak (`/api/cloudflare-redirect`), WA money (`/api/cloudflare-wa-money`) — работают через Manager API, статус виден в UI.
+  - Сабдомены: `subdomainService` + `Subdomain` создают/удаляют DNS в Cloudflare через Manager API (`/api/subdomains`). **На данный момент не работает.**
+  - Креды Cloudflare: модель `CloudflareCredential`, проверка токена/аккаунта, CRUD `/api/cloudflare/credentials`, UI «Cloudflare Workers Credentials».
+  - Фронтенд: разделы Cloudflare (Credentials, Caching, Cloak, WA Money, Redirect), расширенный `LinksView` (вкл/выкл воркер, выбор аккаунта, автогенерация cloudflare link), Navbar/роутер обновлены, Users для админа.
+
+- Что нужно настроить, чтобы работало:
+  - В `.env` задать `MANAGER_BASE_URL`, `MANAGER_BEARER`, `MANAGER_EMAIL` (для вызова Manager API). Так же `VITE_CLOUDFLARE_BASE_DOMAIN` для дефолтного значения "Cloudflare Link".
+  - В UI «Cloudflare Workers Credentials» добавить токен Cloudflare (с правами Workers + Zones:Read) — без этого создание воркеров для ссылок не сработает.
+
+- Как это работает (коротко):
+  - CRUD ссылок: по флажку «Enable Cloudflare Worker» создаётся/обновляется воркер с массивом редиректов, route в зоне и A-запись; данные хранятся в Mongo, кэш ротации в Redis.
+  - Джобы: бекенд запрашивает креды у Manager API, затем на каждый домен включает кеш-правила, клоакинг или редирект-воркер; прогресс можно читать через `/api/.../status`.
+
 ## 🔧 Управление
 
 ```bash

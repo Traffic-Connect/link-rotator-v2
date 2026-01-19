@@ -18,6 +18,53 @@ const redirectSchema = new mongoose.Schema({
     }
 }, { _id: true });
 
+const cloudflareSchema = new mongoose.Schema({
+    enabled: {
+        type: Boolean,
+        default: false
+    },
+    credential: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'CloudflareCredential'
+    },
+    link: {
+        type: String,
+        trim: true
+    },
+    workerName: {
+        type: String,
+        trim: true
+    },
+    workerId: {
+        type: String,
+        trim: true
+    },
+    routeId: {
+        type: String,
+        trim: true
+    },
+    routePattern: {
+        type: String,
+        trim: true
+    },
+    zoneId: {
+        type: String,
+        trim: true
+    },
+    zoneName: {
+        type: String,
+        trim: true
+    },
+    dnsRecordId: {
+        type: String,
+        trim: true
+    },
+    dnsHostname: {
+        type: String,
+        trim: true
+    }
+}, { _id: false });
+
 const linkSchema = new mongoose.Schema({
     key: {
         type: String,
@@ -46,6 +93,10 @@ const linkSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         index: true
+    },
+    cloudflare: {
+        type: cloudflareSchema,
+        default: () => ({ enabled: false })
     }
 }, {
     timestamps: true,
@@ -57,6 +108,17 @@ const linkSchema = new mongoose.Schema({
 linkSchema.index({ key: 1, isActive: 1 });
 linkSchema.index({ userId: 1, createdAt: -1 });
 linkSchema.index({ 'redirects.clickCount': -1 });
+linkSchema.index(
+    { 'cloudflare.credential': 1, 'cloudflare.link': 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            'cloudflare.enabled': true,
+            'cloudflare.credential': { $type: 'objectId' },
+            'cloudflare.link': { $type: 'string' }
+        }
+    }
+);
 
 // Виртуальное поле для кликов
 linkSchema.virtual('clicks', {

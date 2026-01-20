@@ -24,6 +24,7 @@
                 <tr>
                   <th>Label</th>
                   <th>Login</th>
+                  <th style="width: 260px;">Cloudflare Link</th>
                   <th>Account</th>
                   <th>Verified</th>
                   <th class="text-end">Actions</th>
@@ -36,6 +37,28 @@
                   </td>
                   <td>
                     <code>{{ credential.login }}</code>
+                  </td>
+                  <td>
+                    <div class="input-group input-group-sm">
+                      <input
+                          type="text"
+                          class="form-control"
+                          v-model="editableDomains[credential._id]"
+                          :placeholder="DEFAULT_CF_DOMAIN || 'your-cf-domain.com'"
+                      >
+                      <button
+                          class="btn btn-outline-primary"
+                          :disabled="savingRow[credential._id]"
+                          @click="saveDomain(credential)"
+                          title="Save"
+                      >
+                        <span v-if="savingRow[credential._id]" class="spinner-border spinner-border-sm"></span>
+                        <span v-else>Save</span>
+                      </button>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                      Used as the base domain for Cloudflare Links in links.
+                    </small>
                   </td>
                   <td>
                     <div class="d-flex flex-column">
@@ -108,16 +131,21 @@
 import { ref, onMounted } from 'vue'
 import apiClient from '../api/client'
 
+const DEFAULT_CF_DOMAIN = (import.meta.env.VITE_CLOUDFLARE_BASE_DOMAIN || '').trim()
+
 const credentials = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const savingRow = ref({})
 const feedback = ref({ message: '', type: '' })
+const editableDomains = ref({})
 
 const form = ref({
   label: '',
   login: '',
   password: '',
-  apiToken: ''
+  apiToken: '',
+  cloudflareLink: DEFAULT_CF_DOMAIN
 })
 
 const fetchCredentials = async () => {
@@ -125,6 +153,11 @@ const fetchCredentials = async () => {
   try {
     const { data } = await apiClient.get('/cloudflare/credentials')
     credentials.value = data.credentials || []
+    const map = {}
+    credentials.value.forEach(c => {
+      map[c._id] = c.cloudflareLink || DEFAULT_CF_DOMAIN
+    })
+    editableDomains.value = map
   } catch (error) {
     feedback.value = { message: error.response?.data?.error || 'Failed to load credentials', type: 'error' }
   } finally {
@@ -140,15 +173,33 @@ const createCredential = async () => {
       label: form.value.label,
       login: form.value.login,
       password: form.value.password,
-      apiToken: form.value.apiToken
+      apiToken: form.value.apiToken,
+      cloudflareLink: form.value.cloudflareLink
     })
     feedback.value = { message: 'Credentials saved and verified', type: 'success' }
-    form.value = { label: '', login: '', password: '', apiToken: '' }
+    form.value = { label: '', login: '', password: '', apiToken: '', cloudflareLink: DEFAULT_CF_DOMAIN }
     await fetchCredentials()
   } catch (error) {
     feedback.value = { message: error.response?.data?.error || 'Failed to create credential', type: 'error' }
   } finally {
     saving.value = false
+  }
+}
+
+const saveDomain = async (credential) => {
+  const target = (editableDomains.value || {})[credential._id] || ''
+  savingRow.value = { ...savingRow.value, [credential._id]: true }
+  feedback.value = { message: '', type: '' }
+  try {
+    await apiClient.put(`/cloudflare/credentials/${credential._id}`, {
+      cloudflareLink: target
+    })
+    await fetchCredentials()
+    feedback.value = { message: 'Cloudflare Link saved', type: 'success' }
+  } catch (error) {
+    feedback.value = { message: error.response?.data?.error || 'Failed to update Cloudflare Link', type: 'error' }
+  } finally {
+    savingRow.value = { ...savingRow.value, [credential._id]: false }
   }
 }
 

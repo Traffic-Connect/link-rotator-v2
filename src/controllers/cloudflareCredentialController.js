@@ -8,10 +8,40 @@ class CloudflareCredentialController {
         try {
             const credentials = await CloudflareCredential.find()
                 .sort({ createdAt: -1 })
-                .select('label login accountId accountName lastVerifiedAt createdAt updatedAt')
+                .select('label login accountId accountName cloudflareLink lastVerifiedAt createdAt updatedAt')
                 .lean();
 
             res.json({ credentials });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async update(req, res, next) {
+        try {
+            const { id } = req.params;
+            const { cloudflareLink } = req.body;
+
+            const credential = await CloudflareCredential.findById(id);
+            if (!credential) {
+                return res.status(404).json({ error: 'Credential not found' });
+            }
+
+            credential.cloudflareLink = (cloudflareLink || '').trim();
+            await credential.save();
+
+            res.json({
+                credential: {
+                    id: credential._id,
+                    label: credential.label,
+                    login: credential.login,
+                    accountId: credential.accountId,
+                    accountName: credential.accountName,
+                    cloudflareLink: credential.cloudflareLink || '',
+                    lastVerifiedAt: credential.lastVerifiedAt,
+                    updatedAt: credential.updatedAt
+                }
+            });
         } catch (error) {
             next(error);
         }
@@ -24,7 +54,7 @@ class CloudflareCredentialController {
                 return res.status(400).json({ errors: errors.array() });
             }
 
-            const { label, login, password, apiToken } = req.body;
+            const { label, login, password, apiToken, cloudflareLink } = req.body;
 
             const verification = await verifyCredentials(apiToken);
 
@@ -40,6 +70,7 @@ class CloudflareCredentialController {
                 accountId: verification.accountId,
                 accountName: verification.accountName,
                 lastVerifiedAt: new Date(),
+                cloudflareLink: cloudflareLink || '',
                 createdBy: req.user.id
             });
 
@@ -50,7 +81,8 @@ class CloudflareCredentialController {
                     login: credential.login,
                     accountId: credential.accountId,
                     accountName: credential.accountName,
-                    lastVerifiedAt: credential.lastVerifiedAt
+                    lastVerifiedAt: credential.lastVerifiedAt,
+                    cloudflareLink: credential.cloudflareLink || ''
                 }
             });
         } catch (error) {

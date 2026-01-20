@@ -257,12 +257,12 @@
                       type="text"
                       class="form-control"
                       v-model="newLink.cloudflare.link"
-                      :placeholder="`${newLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}`"
+                      :placeholder="buildCloudflareLink(newLink.key || 'subdomain', newLink.cloudflare.credentialId)"
                       required
                       readonly
                   >
                   <small class="text-muted">
-                    Final route: {{ newLink.cloudflare.link || `${newLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}` }}
+                    Final route: {{ newLink.cloudflare.link || buildCloudflareLink(newLink.key || 'subdomain', newLink.cloudflare.credentialId) }}
                   </small>
                 </div>
               </div>
@@ -336,12 +336,12 @@
                       type="text"
                       class="form-control"
                       v-model="editingLink.cloudflare.link"
-                      :placeholder="`${editingLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}`"
+                      :placeholder="buildCloudflareLink(editingLink.key || 'subdomain', editingLink.cloudflare.credentialId)"
                       required
                       readonly
                   >
                   <small class="text-muted">
-                    Final route: {{ editingLink.cloudflare.link || `${editingLink.key || 'subdomain'}.${CLOUDFLARE_BASE_DOMAIN}` }}
+                    Final route: {{ editingLink.cloudflare.link || buildCloudflareLink(editingLink.key || 'subdomain', editingLink.cloudflare.credentialId) }}
                   </small>
                 </div>
               </div>
@@ -382,20 +382,36 @@ const stats = ref({
   activeLinks: 0
 })
 
-function assembleWorkerDomain(key) {
-  const sanitized = (key || '').trim().toLowerCase()
-  if (!sanitized) {
+function getCredentialDomain(credentialId) {
+  if (!credentialId) {
     return CLOUDFLARE_BASE_DOMAIN
   }
-  return `${sanitized}.${CLOUDFLARE_BASE_DOMAIN}`
+  const found = cloudflareCredentials.value.find(c => c._id === credentialId)
+  const domain = (found?.cloudflareLink || '').trim()
+  return domain || CLOUDFLARE_BASE_DOMAIN
+}
+
+function assembleWorkerDomain(key, domainOverride = '') {
+  const baseDomain = (domainOverride || '').trim() || CLOUDFLARE_BASE_DOMAIN
+  const sanitized = (key || '').trim().toLowerCase()
+  if (!sanitized) {
+    return baseDomain
+  }
+  return `${sanitized}.${baseDomain}`
+}
+
+function buildCloudflareLink(key, credentialId) {
+  const domain = getCredentialDomain(credentialId)
+  return assembleWorkerDomain(key, domain)
 }
 
 function defaultCloudflareState(key = '') {
   const hasCredentials = cloudflareCredentials.value.length > 0
+  const firstId = hasCredentials ? cloudflareCredentials.value[0]._id : ''
   return {
     enabled: hasCredentials,
-    credentialId: hasCredentials ? cloudflareCredentials.value[0]._id : '',
-    link: assembleWorkerDomain(key)
+    credentialId: firstId,
+    link: buildCloudflareLink(key, firstId)
   }
 }
 
@@ -416,12 +432,13 @@ function mapCloudflareFromLink(link) {
     state.enabled = false
     return state
   }
+  const selectedCredentialId = link.cloudflare?.credential?._id
+        || link.cloudflare?.credential
+        || (cloudflareCredentials.value[0]?._id || '')
   return {
     enabled: true,
-    credentialId: link.cloudflare?.credential?._id
-        || link.cloudflare?.credential
-        || (cloudflareCredentials.value[0]?._id || ''),
-    link: link.cloudflare?.link || assembleWorkerDomain(link?.key || '')
+    credentialId: selectedCredentialId,
+    link: link.cloudflare?.link || buildCloudflareLink(link?.key || '', selectedCredentialId)
   }
 }
 
@@ -471,7 +488,10 @@ const toastMessage = ref('')
 const toast = ref(null)
 
 function shouldAutoLink(link) {
-  const expected = assembleWorkerDomain(link?.key || '')
+  const credentialId = link?.cloudflare?.credential?._id
+      || link?.cloudflare?.credential
+      || link?.cloudflare?.credentialId
+  const expected = buildCloudflareLink(link?.key || '', credentialId)
   const current = link?.cloudflare?.link
   return !current || current === expected
 }
@@ -481,7 +501,7 @@ function handleCreateCloudflareToggle() {
     return
   }
   ensureCredentialSelection(newLink.value)
-  newLink.value.cloudflare.link = assembleWorkerDomain(newLink.value.key)
+  newLink.value.cloudflare.link = buildCloudflareLink(newLink.value.key, newLink.value.cloudflare.credentialId)
 }
 
 function handleEditCloudflareToggle() {
@@ -491,7 +511,7 @@ function handleEditCloudflareToggle() {
   }
   ensureCredentialSelection(editingLink.value)
   editingLinkAutoLink.value = true
-  editingLink.value.cloudflare.link = assembleWorkerDomain(editingLink.value.key)
+  editingLink.value.cloudflare.link = buildCloudflareLink(editingLink.value.key, editingLink.value.cloudflare.credentialId)
 }
 
 function getTodayDate() {
@@ -512,7 +532,13 @@ function setToday() {
 
 watch(() => newLink.value.key, () => {
   if (newLink.value.cloudflare) {
-    newLink.value.cloudflare.link = assembleWorkerDomain(newLink.value.key)
+    newLink.value.cloudflare.link = buildCloudflareLink(newLink.value.key, newLink.value.cloudflare.credentialId)
+  }
+})
+
+watch(() => newLink.value.cloudflare?.credentialId, (id) => {
+  if (newLink.value.cloudflare?.enabled) {
+    newLink.value.cloudflare.link = buildCloudflareLink(newLink.value.key, id)
   }
 })
 
@@ -530,20 +556,27 @@ watch(() => cloudflareCredentials.value.length, (count, prevCount) => {
     newLink.value.cloudflare.enabled = true
   }
   ensureCredentialSelection(newLink.value)
-  newLink.value.cloudflare.link = assembleWorkerDomain(newLink.value.key)
+  newLink.value.cloudflare.link = buildCloudflareLink(newLink.value.key, newLink.value.cloudflare.credentialId)
 
   if (editingLink.value.cloudflare?.enabled) {
     ensureCredentialSelection(editingLink.value)
     if (editingLinkAutoLink.value) {
-      editingLink.value.cloudflare.link = assembleWorkerDomain(editingLink.value.key)
+      editingLink.value.cloudflare.link = buildCloudflareLink(editingLink.value.key, editingLink.value.cloudflare.credentialId)
     }
   }
 })
 
 watch(() => editingLink.value.key, () => {
   if (editingLink.value.cloudflare?.enabled && editingLinkAutoLink.value) {
-    editingLink.value.cloudflare.link = assembleWorkerDomain(editingLink.value.key)
+    editingLink.value.cloudflare.link = buildCloudflareLink(editingLink.value.key, editingLink.value.cloudflare.credentialId)
   }
+})
+
+watch(() => editingLink.value.cloudflare?.credentialId, (id, prev) => {
+  if (!editingLink.value.cloudflare?.enabled) return
+  if (!editingLinkAutoLink.value) return
+  if (id === prev) return
+  editingLink.value.cloudflare.link = buildCloudflareLink(editingLink.value.key, id)
 })
 
 const fetchLinks = async () => {

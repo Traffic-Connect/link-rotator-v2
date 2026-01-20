@@ -35,6 +35,11 @@ const cloudflareCredentialSchema = new mongoose.Schema({
     lastVerifiedAt: {
         type: Date
     },
+    cloudflareLink: {
+        type: String,
+        trim: true,
+        default: ''
+    },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'

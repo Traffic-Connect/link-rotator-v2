@@ -164,7 +164,7 @@ class LinkController {
 
             const links = await Link.find({ userId })
                 .sort({ createdAt: -1 })
-                .populate('cloudflare.credential', 'label login accountName')
+                .populate('cloudflare.credential', 'label login accountName cloudflareLink')
                 .lean();
 
             // Получаем ID всех ссылок пользователя
@@ -234,7 +234,7 @@ class LinkController {
             const link = await Link.findOne({
                 _id: req.params.id,
                 userId: req.user.id
-            }).populate('cloudflare.credential', 'label login accountName');
+            }).populate('cloudflare.credential', 'label login accountName cloudflareLink');
 
             if (!link) {
                 return res.status(404).json({ error: 'Link not found' });
@@ -332,7 +332,7 @@ class LinkController {
                 throw creationError;
             }
 
-            await link.populate('cloudflare.credential', 'label login accountName');
+            await link.populate('cloudflare.credential', 'label login accountName cloudflareLink');
 
             res.status(201).json(link);
         } catch (error) {

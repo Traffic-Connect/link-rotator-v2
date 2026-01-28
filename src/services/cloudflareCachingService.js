@@ -20,27 +20,72 @@ if (!MANAGER_ACCOUNT_EMAIL) {
 }
 
 async function callManagerApi(domain) {
-    const response = await fetch(MANAGER_API_URL, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${MANAGER_API_TOKEN}`
-        },
-        body: JSON.stringify({
-            email: MANAGER_ACCOUNT_EMAIL,
-            domain
-        })
-    });
+    const cleanedDomain = typeof domain === 'string' ? domain.trim().toLowerCase() : '';
+    const candidates = [];
 
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Manager API error (${response.status}): ${text}`);
+    if (cleanedDomain) {
+        candidates.push(cleanedDomain);
+        if (cleanedDomain.startsWith('www.')) {
+            candidates.push(cleanedDomain.replace(/^www\./i, ''));
+        } else {
+            candidates.push(`www.${cleanedDomain}`);
+        }
     }
 
-    const payload = await response.json();
-    if (payload.status !== 'success' || !payload.data) {
-        throw new Error('Manager API did not return credentials');
+    const requestCredentials = async targetDomain => {
+        const response = await fetch(MANAGER_API_URL, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${MANAGER_API_TOKEN}`
+            },
+            body: JSON.stringify({
+                email: MANAGER_ACCOUNT_EMAIL,
+                domain: targetDomain
+            })
+        });
+
+        const text = await response.text();
+        let parsed;
+        try {
+            parsed = text ? JSON.parse(text) : {};
+        } catch (error) {
+            parsed = null;
+        }
+
+        const payload = parsed || {};
+        const isDomainNotFound = payload?.status === 'error'
+            && typeof payload?.message === 'string'
+            && payload.message.toLowerCase().includes('domain not found');
+
+        if (!response.ok && !isDomainNotFound) {
+            const message = payload?.message || text || 'Unknown error';
+            throw new Error(`Manager API error (${response.status}): ${message}`);
+        }
+
+        return { payload, isDomainNotFound };
+    };
+
+    let payload;
+    let lastNotFound;
+    for (const targetDomain of candidates) {
+        const { payload: currentPayload, isDomainNotFound } = await requestCredentials(targetDomain);
+        if (isDomainNotFound) {
+            lastNotFound = currentPayload;
+            continue;
+        }
+        payload = currentPayload;
+        break;
+    }
+
+    if (!payload) {
+        payload = lastNotFound;
+    }
+
+    if (payload?.status !== 'success' || !payload?.data) {
+        const message = payload?.message || 'Manager API did not return credentials';
+        throw new Error(`Manager API error: ${message}`);
     }
 
     const data = payload.data;

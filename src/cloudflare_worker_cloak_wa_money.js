@@ -186,6 +186,20 @@ async function fetchFromBase(request, baseUrl, maxRedirects) {
 
   const resp = await fetchFollowRedirects(request, base.toString(), maxRedirects);
 
+  // Якщо сторінка не знайдена — віддаємо головну без редіректів
+  if (resp.status === 404) {
+    const root = new URL(baseUrl);
+    root.pathname = "/";
+    root.search = "";
+    const rootResp = await fetchFollowRedirects(request, root.toString(), maxRedirects);
+    const rootHeaders = new Headers(rootResp.headers);
+    if (!rootHeaders.get("content-type")) {
+      rootHeaders.set("content-type", "text/html; charset=utf-8");
+    }
+    rootHeaders.delete("location");
+    return new Response(rootResp.body, { status: rootResp.status, headers: rootHeaders });
+  }
+
   const headers = new Headers(resp.headers);
   if (!headers.get("content-type")) {
     headers.set("content-type", "text/html; charset=utf-8");

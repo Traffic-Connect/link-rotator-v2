@@ -29,9 +29,24 @@ function joinPaths(basePath, reqPath) {
   return b ? `${a}/${b}` : `${a}/`;
 }
 
-function buildTarget(baseUrl, reqUrl) {
+function buildTarget(baseUrl, reqUrl, preservePath = true) {
   const base = new URL(ensureUrl(baseUrl));
-  base.pathname = joinPaths(base.pathname, reqUrl.pathname);
+  const basePath = base.pathname || "/";
+  const reqPath = reqUrl.pathname || "/";
+
+  if (preservePath) {
+    // Якщо запит уже містить базовий шлях (наприклад, /ko-kr/...), не дублюємо його.
+    const normalizedBase = basePath.replace(/\/+$/, "/");
+    if (normalizedBase !== "/" && reqPath.startsWith(normalizedBase)) {
+      base.pathname = reqPath;
+    } else {
+      base.pathname = joinPaths(basePath, reqPath);
+    }
+  } else {
+    // Використовуємо шлях, заданий у baseUrl, без додавання шляху запиту.
+    base.pathname = basePath;
+  }
+
   base.search = reqUrl.search;
   return base.toString();
 }
@@ -205,6 +220,6 @@ async function handleRequest(request) {
   }
 
   // 4) Усі інші — 302 на партнерку, реферер залишиться автоматично
-  const partnerTarget = buildTarget(cfg.partnerUrl, url);
+  const partnerTarget = buildTarget(cfg.partnerUrl, url, false);
   return Response.redirect(partnerTarget, 302);
 }

@@ -206,7 +206,17 @@
             <div class="modal-body">
               <div class="mb-3">
                 <label class="form-label">Key (unique identifier)</label>
-                <input type="text" class="form-control" v-model="newLink.key" required>
+                <div class="input-group">
+                  <input type="text" class="form-control" v-model="newLink.key" required>
+                  <button
+                      type="button"
+                      class="btn btn-outline-secondary"
+                      @click="generateKeyFromName"
+                      :disabled="!canGenerateKeyFromName"
+                  >
+                    Generate
+                  </button>
+                </div>
                 <small class="text-muted">Will be: /api/links/r/{{ newLink.key }}</small>
               </div>
 
@@ -361,9 +371,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import apiClient from '../api/client'
 import { Modal, Toast } from 'bootstrap'
+import slugify from 'slugify'
 
 const links = ref([])
 const loading = ref(true)
@@ -380,6 +391,10 @@ const stats = ref({
   totalClicks: 0,
   dailyClicks: 0,
   activeLinks: 0
+})
+
+const canGenerateKeyFromName = computed(() => {
+  return Boolean((newLink.value?.name || '').trim())
 })
 
 function getCredentialDomain(credentialId) {
@@ -528,6 +543,26 @@ function getFirstDayOfMonth() {
 function setToday() {
   dateFilter.value = getTodayDate()
   fetchLinks()
+}
+
+function generateKeyFromName() {
+  const sourceName = (newLink.value?.name || '').trim()
+  if (!sourceName) {
+    return
+  }
+
+  const generated = slugify(sourceName, {
+    lower: true,
+    strict: true,
+    trim: true,
+    locale: 'uk'
+  })
+
+  if (!generated) {
+    return
+  }
+
+  newLink.value.key = generated
 }
 
 watch(() => newLink.value.key, () => {
